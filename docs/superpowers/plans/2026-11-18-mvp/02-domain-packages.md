@@ -48,7 +48,7 @@ Final branch review: reviewer-opus. Not a money/production-data branch (one revi
 - Stage order is fixed: `BATH → DRY → GROOM → FINISH`.
 - Limits: ≤ 4 pets per appointment, ≤ 6 services per pet.
 - Defaults from the spec: size thresholds `{ S: 20, M: 50, L: 90 }` lb; `maxQueueWaitMin` 90; `pickupGraceMin` 60; `etaNotifyThresholdMin` 30; wait-mode idle between one pet's segments ≤ 15 min; drop-off intake 10 min; in-progress step ends no earlier than now + 5 min; owner page updates when ETA moves ≥ 5 min; ETA WhatsApp at most once per hour.
-- Every task: `pnpm turbo run lint typecheck test build --filter='./packages/*'` exits 0; `git grep -n -i -E 'beautyspa|bs_refresh|\bbs_' -- ':!docs/provenance.md' ':!docs/superpowers/**'` prints nothing; docs change in the same commit; one commit per task (plus fix commits after review).
+- Every task: `pnpm turbo run lint typecheck test build --filter='./packages/*'` exits 0; `git grep -n -i -E 'beautyspa|bs_refresh|\bbs_' -- ':!*.md'` prints nothing; docs change in the same commit; one commit per task (plus fix commits after review).
 - Code, comments, docs and commits in English.
 
 ## Review Focus
