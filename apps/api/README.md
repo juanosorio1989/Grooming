@@ -175,17 +175,17 @@ Plain functions in `src/auth/crypto/` (`node:crypto`, plus `@node-rs/argon2`):
 
 ## Database (Prisma 6, PostgreSQL 16)
 
-Schema: `prisma/schema.prisma`. It is still the salon schema copied from the source repo (see
-`docs/provenance.md`); Plan 01 Task 4 replaces it with the grooming model in
-`docs/superpowers/specs/2026-11-18-mvp-design/data-model.md`.
+Schema: `prisma/schema.prisma`, the grooming model in
+`docs/superpowers/specs/2026-11-18-mvp-design/data-model.md` (table index: `docs/data/README.md`).
 `PrismaService` (global `PrismaModule`, `src/prisma/`) connects lazily on the first query.
-The booking exclusion constraints are raw SQL in `prisma/migrations/*_booking_constraints`.
+The booking exclusion constraints, `segment_time_order` and the `service_price_any_coat` partial unique index are
+raw SQL at the end of `prisma/migrations/*_init/migration.sql`.
 
 | Script | What it does |
 |---|---|
 | `db:migrate` | `prisma migrate dev` against `DATABASE_URL` (create/apply migrations) |
 | `db:deploy` | `prisma migrate deploy` (apply pending migrations, never drops data) |
-| `db:seed` | idempotent seed: org `demo-salon`, location `Main` with hours |
+| `db:seed` | idempotent seed: org `demo-salon`, location `Main` with hours and settings defaults, 8 stations and 10 kennels |
 | `db:drift` | fails if `schema.prisma` and `prisma/migrations` differ (shadow DB: `DATABASE_URL_TEST` + `_shadow`, or `SHADOW_DATABASE_URL`) |
 | `db:generate` | regenerate the Prisma client (also runs on `postinstall`) |
 | `test:int` | integration tests (`vitest.int.config.mts`, `test/integration/**/*.int.test.ts`) against `DATABASE_URL_TEST` and `REDIS_URL_TEST` |

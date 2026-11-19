@@ -6,9 +6,10 @@
 # DATABASE_URL_TEST with "_shadow" appended to the database name (created on
 # first use); override with SHADOW_DATABASE_URL.
 #
-# The raw-SQL booking constraints (btree_gist, no_employee_overlap,
-# no_resource_overlap, segment_time_order) are invisible to the Prisma schema;
-# `migrate diff` does not report them as drift (verified with Prisma 6.19), so
+# The raw SQL in the init migration (btree_gist, no_employee_overlap,
+# no_resource_overlap, segment_time_order, the partial unique index
+# service_price_any_coat) is invisible to the Prisma schema; `migrate diff`
+# does not report it as drift (verified with Prisma 6.19), so
 # no filtering is needed. The integration test asserts they exist.
 set -euo pipefail
 cd "$(dirname "$0")/.."

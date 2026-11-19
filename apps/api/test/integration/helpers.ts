@@ -1,4 +1,4 @@
-import { PrismaClient, type StaffRole } from "@prisma/client";
+import { type Prisma, PrismaClient, type SegmentStage, type StaffRole } from "@prisma/client";
 import { Encryptor } from "../../src/auth/crypto/encryption.js";
 import { hashPassword } from "../../src/auth/crypto/password.js";
 import { testEnv } from "../support/test-env.js";
@@ -19,7 +19,8 @@ export async function truncateAll(prisma: PrismaClient): Promise<void> {
 }
 
 /**
- * Extracts the PostgreSQL SQLSTATE from a Prisma error. Prisma 6 does not map
+ * Extracts the PostgreSQL SQLSTATE from a Prisma error. P2002 (unique
+ * constraint) is reported as 23505. Prisma 6 does not map
  * exclusion (23P01) or check (23514) violations to a P-code: it throws
  * PrismaClientUnknownRequestError with no `meta`/`cause`, and the SQLSTATE
  * appears only in the message as `code: "23P01"`. `meta.code` / `cause.code`
@@ -27,7 +28,9 @@ export async function truncateAll(prisma: PrismaClient): Promise<void> {
  */
 export function pgCode(err: unknown): string | undefined {
   if (typeof err !== "object" || err === null) return undefined;
-  const e = err as { meta?: Record<string, unknown>; cause?: { code?: unknown }; message?: string };
+  const e = err as { code?: unknown; meta?: Record<string, unknown>; cause?: { code?: unknown }; message?: string };
+  // Prisma maps unique violations (23505) to P2002 and drops the SQLSTATE.
+  if (e.code === "P2002") return "23505";
   const metaCode = e.meta?.code;
   if (typeof metaCode === "string" && /^[0-9A-Z]{5}$/.test(metaCode)) return metaCode;
   const causeCode = e.cause?.code;
@@ -49,16 +52,28 @@ export interface Fixture {
   locationId: string;
   staffA: string;
   staffB: string;
+  /** BATH service on the tub resource type. */
   serviceId: string;
+  /** Tub resource type (`STATION`). */
   resourceTypeId: string;
   resource1: string;
   resource2: string;
+  /** Kennel resource type (`KENNEL`). */
+  kennelTypeId: string;
+  kennel1: string;
+  kennel2: string;
   customerId: string;
+  petId: string;
 }
 
-export async function seedFixture(prisma: PrismaClient): Promise<Fixture> {
+export interface FixtureOpts {
+  /** Organization slug; defaults to `test-salon` (the test `DEFAULT_ORG_SLUG`). */
+  slug?: string;
+}
+
+export async function seedFixture(prisma: PrismaClient, opts: FixtureOpts = {}): Promise<Fixture> {
   const org = await prisma.organization.create({
-    data: { name: "Test Salon", slug: "test-salon", defaultLocale: "en" },
+    data: { name: "Test Grooming", slug: opts.slug ?? "test-salon", defaultLocale: "en" },
   });
   const location = await prisma.location.create({
     data: { organizationId: org.id, name: "Main", timezone: "America/New_York", settings: {} },
@@ -70,26 +85,49 @@ export async function seedFixture(prisma: PrismaClient): Promise<Fixture> {
     data: { organizationId: org.id, email: "b@test.dev", role: "EMPLOYEE", locale: "en" },
   });
   const resourceType = await prisma.resourceType.create({
-    data: { organizationId: org.id, name: { en: "Pedicure chair", es: "Silla de pedicura" } },
+    data: { organizationId: org.id, name: { en: "Tub", es: "Tina" }, kind: "STATION" },
   });
   const resource1 = await prisma.resource.create({
-    data: { organizationId: org.id, locationId: location.id, resourceTypeId: resourceType.id, name: "Chair 1" },
+    data: { organizationId: org.id, locationId: location.id, resourceTypeId: resourceType.id, name: "Tub 1" },
   });
   const resource2 = await prisma.resource.create({
-    data: { organizationId: org.id, locationId: location.id, resourceTypeId: resourceType.id, name: "Chair 2" },
+    data: { organizationId: org.id, locationId: location.id, resourceTypeId: resourceType.id, name: "Tub 2" },
+  });
+  const kennelType = await prisma.resourceType.create({
+    data: { organizationId: org.id, name: { en: "Kennel", es: "Jaula" }, kind: "KENNEL" },
+  });
+  const kennel1 = await prisma.resource.create({
+    data: { organizationId: org.id, locationId: location.id, resourceTypeId: kennelType.id, name: "Kennel 1" },
+  });
+  const kennel2 = await prisma.resource.create({
+    data: { organizationId: org.id, locationId: location.id, resourceTypeId: kennelType.id, name: "Kennel 2" },
   });
   const service = await prisma.service.create({
     data: {
       organizationId: org.id,
-      name: { en: "Pedicure", es: "Pedicura" },
-      durationMin: 60,
+      name: { en: "Bath", es: "Baño" },
+      species: "DOG",
+      stage: "BATH",
+      isMain: true,
+      requiredSkill: "BATHER",
       bufferAfterMin: 0,
-      priceCents: 4000,
       resourceTypeId: resourceType.id,
     },
   });
   const customer = await prisma.customer.create({
     data: { organizationId: org.id, phoneE164: "+13055550100", name: "Ana", locale: "es", createdVia: "ONLINE" },
+  });
+  const pet = await prisma.pet.create({
+    data: {
+      organizationId: org.id,
+      customerId: customer.id,
+      name: "Max",
+      species: "DOG",
+      breed: "Poodle",
+      weightG: 19_000,
+      sizeClass: "M",
+      coatType: "CURLY",
+    },
   });
   return {
     orgId: org.id,
@@ -100,47 +138,84 @@ export async function seedFixture(prisma: PrismaClient): Promise<Fixture> {
     resourceTypeId: resourceType.id,
     resource1: resource1.id,
     resource2: resource2.id,
+    kennelTypeId: kennelType.id,
+    kennel1: kennel1.id,
+    kennel2: kennel2.id,
     customerId: customer.id,
+    petId: pet.id,
   };
 }
 
 export interface SegmentInput {
-  staffUserId: string;
+  /** Null for kennel segments (no person). */
+  staffUserId: string | null;
   startsAt: string; // "HH:MM" on 2026-12-01 UTC
   endsAt: string;
   blockEndsAt?: string;
   resourceId?: string | null;
   occupies?: boolean;
+  /** Defaults to `BATH`. */
+  stage?: SegmentStage;
+  /** Defaults to the fixture's BATH service; pass null for kennel segments. */
+  serviceId?: string | null;
 }
 
-const at = (hhmm: string) => new Date(`2026-12-01T${hhmm}:00.000Z`);
+export const at = (hhmm: string) => new Date(`2026-12-01T${hhmm}:00.000Z`);
 
-/** Creates a BOOKED appointment with one segment. */
+/**
+ * Creates a BOOKED appointment with one pet visit (the fixture's pet) and one
+ * segment, in one transaction, and returns the segment.
+ */
 export function bookSegment(prisma: PrismaClient, f: Fixture, s: SegmentInput) {
   const startsAt = at(s.startsAt);
   const endsAt = at(s.endsAt);
-  return prisma.appointment.create({
+  return prisma.$transaction(async (tx) => {
+    const visit = await createPetVisit(tx, f);
+    return tx.appointmentSegment.create({
+      data: {
+        organizationId: f.orgId,
+        appointmentId: visit.appointmentId,
+        petVisitId: visit.id,
+        stage: s.stage ?? "BATH",
+        serviceId: s.serviceId === undefined ? f.serviceId : s.serviceId,
+        staffUserId: s.staffUserId,
+        resourceId: s.resourceId ?? null,
+        startsAt,
+        endsAt,
+        blockEndsAt: s.blockEndsAt ? at(s.blockEndsAt) : endsAt,
+        durationMin: Math.round((endsAt.getTime() - startsAt.getTime()) / 60_000),
+        priceCents: 4000,
+        occupies: s.occupies ?? true,
+      },
+    });
+  });
+}
+
+/** Creates a BOOKED appointment with one pet visit for the fixture's pet; returns the visit. */
+export async function createPetVisit(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  f: Fixture,
+): Promise<{ id: string; appointmentId: string }> {
+  const appointment = await prisma.appointment.create({
     data: {
       organizationId: f.orgId,
       locationId: f.locationId,
       customerId: f.customerId,
       status: "BOOKED",
       source: "ONLINE",
-      segments: {
-        create: {
-          organizationId: f.orgId,
-          serviceId: f.serviceId,
-          staffUserId: s.staffUserId,
-          resourceId: s.resourceId ?? null,
-          startsAt,
-          endsAt,
-          blockEndsAt: s.blockEndsAt ? at(s.blockEndsAt) : endsAt,
-          durationMin: Math.round((endsAt.getTime() - startsAt.getTime()) / 60_000),
-          priceCents: 4000,
-          occupies: s.occupies ?? true,
-        },
-      },
+      bookingMode: "DROP_OFF",
     },
+  });
+  return prisma.petVisit.create({
+    data: {
+      organizationId: f.orgId,
+      appointmentId: appointment.id,
+      petId: f.petId,
+      status: "BOOKED",
+      sizeClassAtBooking: "M",
+      priceCentsQuoted: 4000,
+    },
+    select: { id: true, appointmentId: true },
   });
 }
 

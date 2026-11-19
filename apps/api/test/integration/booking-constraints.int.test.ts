@@ -13,6 +13,7 @@ afterAll(async () => {
   await prisma.$disconnect();
 });
 
+// Person segments (BATH stage, the fixture pet). Kennel segments: grooming-constraints.int.test.ts.
 describe("appointment_segment booking constraints", () => {
   it("has both exclusion constraints and the time-order check", async () => {
     const rows = await prisma.$queryRaw<{ conname: string; contype: string }[]>`
