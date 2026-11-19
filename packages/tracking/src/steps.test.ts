@@ -85,6 +85,20 @@ describe("steps", () => {
   it("skip a later stage early", () => {
     const a = run(base, { type: "SKIP", stage: "GROOM" }, ctx());
     expect(get(a.steps, "GROOM").status).toBe("SKIPPED");
+    expect(validateSteps(a.steps)).toBeNull();
+    const b = run(a.steps, { type: "START", stage: "BATH" }, ctx({ at: m(20) }));
+    expect(validateSteps(b.steps)).toBeNull();
+  });
+
+  it("skipped-ahead steps keep a valid timeline", () => {
+    const a = run(base, { type: "SKIP", stage: "GROOM" }, ctx());
+    const b = run(a.steps, { type: "START", stage: "BATH" }, ctx({ at: m(20) }));
+    expect(validateSteps(b.steps)).toBeNull();
+    const c = run(base, { type: "START", stage: "BATH" }, ctx());
+    const d = run(c.steps, { type: "SKIP", stage: "GROOM" }, ctx({ at: m(20) }));
+    const e = run(d.steps, { type: "READY" }, ctx({ at: m(30) }));
+    expect(validateSteps(d.steps)).toBeNull();
+    expect(validateSteps(e.steps)).toBeNull();
   });
 
   it("ready finishes the open step", () => {
@@ -117,12 +131,14 @@ describe("steps", () => {
       ctx({ at: m(40), hasAfterPhoto: false, requireAfterPhoto: false }),
     );
     expect(ok.ok).toBe(true);
+    if (ok.ok) expect(validateSteps(ok.steps)).toBeNull();
   });
 
   it("nothing after ready", () => {
     const a = run(base, { type: "SKIP", stage: "BATH" }, ctx());
     const b = run(a.steps, { type: "SKIP", stage: "GROOM" }, ctx());
     const c = run(b.steps, { type: "READY" }, ctx({ at: m(20) }));
+    expect(validateSteps(c.steps)).toBeNull();
     for (const action of [
       { type: "START", stage: "BATH" },
       { type: "SKIP", stage: "BATH" },
@@ -148,6 +164,7 @@ describe("steps", () => {
   it("on behalf", () => {
     const a = run(base, { type: "START", stage: "BATH" }, ctx({ performedBy: "ana", recordedBy: "rec" }));
     expect(get(a.steps, "BATH")).toMatchObject({ performedBy: "ana", recordedBy: "rec" });
+    expect(validateSteps(a.steps)).toBeNull();
   });
 
   it("late replay is clamped", () => {

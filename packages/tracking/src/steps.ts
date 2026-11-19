@@ -165,6 +165,7 @@ export function validateSteps(steps: Step[]): TrackingErrorCode | null {
   let prevLast: Ms | null = null;
   for (const s of steps) {
     if (s.status === "PENDING") continue;
+    if (s.status === "SKIPPED" && s.startedAt === null) continue; // no work interval
     const first = s.startedAt ?? s.finishedAt;
     if (prevLast !== null && first !== null && first < prevLast) return bad;
     prevLast = s.finishedAt ?? s.startedAt;
