@@ -1,6 +1,6 @@
 # Grooming MVP — Design
 
-Status: draft for approval · Date: 2026-11-18
+Status: approved 2026-11-18 (mockups: https://claude.ai/artifact/Vn2VWpxCPYQC68d6xdWJhF)
 
 ## Intent
 
