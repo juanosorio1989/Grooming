@@ -67,6 +67,11 @@ describe("validatePlan: rejections", () => {
       reason: "MALFORMED_PLAN",
     });
     expect(reject((s) => { s.pets[0]!.petId = luna.petId; })).toEqual({ ok: false, reason: "MALFORMED_PLAN" });
+    expect(reject((s) => { seg(s, "BATH").petId = "someone-else"; })).toEqual({ ok: false, reason: "MALFORMED_PLAN" });
+    const drop = groomCtx({ bookingMode: "DROP_OFF", pets: [pet(rex, [bath.id]), pet(luna, [bath.id])] });
+    const ds = clone(firstSlot(drop));
+    seg(ds, "KENNEL", 1).petId = rex.petId;
+    expect(rejection(drop, ds)).toEqual({ ok: false, reason: "MALFORMED_PLAN" });
   });
 
   it("wrong price, duration or stage grouping", () => {

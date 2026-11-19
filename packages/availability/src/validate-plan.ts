@@ -40,6 +40,7 @@ function structure(
   const views: PetView[] = [];
   for (const [i, plan] of slot.pets.entries()) {
     const spec = specs[i]!;
+    if (plan.segments.some((x) => x.petId !== plan.petId)) return fail("MALFORMED_PLAN");
     const kennel = dropOff ? (plan.segments[plan.segments.length - 1] ?? null) : null;
     const workSegs = dropOff ? plan.segments.slice(0, -1) : plan.segments;
     if (dropOff && (kennel === null || kennel.stage !== "KENNEL")) return fail("MALFORMED_PLAN");
