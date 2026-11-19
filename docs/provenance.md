@@ -10,7 +10,7 @@ copied with `git archive`.
 | `eslint.config.mjs` | renamed |
 | `packages/config/**` | renamed (`@grooming/config`) |
 | `apps/mobile/README.md` | changed (spec link) |
-| `.env.example` | changed (names, ports, S3 and minio keys) |
-| `docker-compose.yml` | changed (name, ports, minio, minio-init) |
+| `.env.example` | changed (names, ports, S3 and S3 keys) |
+| `docker-compose.yml` | changed (name, ports, s3 (SeaweedFS, replaces MinIO: images no longer published), s3-init) |
 | `docker/postgres/init.sql` | renamed (`grooming_test`) |
 | `.github/workflows/ci.yml` | renamed (grooming DB names) |

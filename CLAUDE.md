@@ -12,13 +12,13 @@ placeholder brand. Separate product from BeautySpa.
 ## Stack
 
 Node 22 (`.nvmrc`), pnpm 10, Turborepo 2, TypeScript strict
-(`noUncheckedIndexedAccess`), NestJS + Prisma + Postgres 16, Redis 7, minio (S3)
+(`noUncheckedIndexedAccess`), NestJS + Prisma + Postgres 16, Redis 7, SeaweedFS (local S3; MinIO images are no longer published; production is R2)
 for pet media, Mailpit for local mail. English only in code, docs and products.
 
 ## Local ports
 
 Chosen to not collide with a running BeautySpa stack: postgres 5433, redis 6380,
-mailpit 1026 (SMTP) / 8026 (UI), minio 9010 (S3) / 9011 (console). Compose
+mailpit 1026 (SMTP) / 8026 (UI), s3 (SeaweedFS) 9010. Compose
 project name `grooming`. DBs `grooming` and `grooming_test`.
 
 ## Copy-from-BeautySpa rule
