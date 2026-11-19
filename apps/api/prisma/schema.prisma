@@ -1,0 +1,667 @@
+// Salon data model copied unchanged from the source repo (see docs/provenance.md);
+// Plan 01 Task 4 replaces it with the grooming model from
+// docs/superpowers/specs/2026-11-18-mvp-design/data-model.md
+//
+// Conventions: UUID v7 ids, snake_case tables/columns (@@map/@map), timestamptz(3)
+// in UTC, money in integer cents, translatable text as jsonb { "en", "es" }.
+// The booking exclusion constraints on appointment_segment are raw SQL in the
+// `booking_constraints` migration; Prisma does not model them.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------- enums
+
+enum StaffRole {
+  OWNER
+  RECEPTION
+  EMPLOYEE
+
+  @@map("staff_role")
+}
+
+enum StaffTokenPurpose {
+  INVITE
+  PASSWORD_RESET
+
+  @@map("staff_token_purpose")
+}
+
+enum TimeOffKind {
+  VACATION
+  BLOCK
+
+  @@map("time_off_kind")
+}
+
+enum SubjectType {
+  CUSTOMER @map("customer")
+  STAFF    @map("staff")
+
+  @@map("subject_type")
+}
+
+enum CreatedVia {
+  ONLINE
+  RECEPTION
+
+  @@map("created_via")
+}
+
+enum NotificationChannel {
+  WHATSAPP
+  SMS
+  EMAIL
+
+  @@map("notification_channel")
+}
+
+enum ConsentSource {
+  BOOKING_FORM
+  PROFILE
+  RECEPTION
+  INBOUND_STOP
+
+  @@map("consent_source")
+}
+
+enum AppointmentStatus {
+  HELD
+  BOOKED
+  CHECKED_IN
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+
+  @@map("appointment_status")
+}
+
+enum AppointmentSource {
+  ONLINE
+  RECEPTION
+  WALK_IN
+
+  @@map("appointment_source")
+}
+
+enum NotificationStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+  SKIPPED
+
+  @@map("notification_status")
+}
+
+enum ActorType {
+  STAFF
+  CUSTOMER
+  SYSTEM
+
+  @@map("actor_type")
+}
+
+// ---------------------------------------------------------------- tenancy
+
+model Organization {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  name          String
+  slug          String   @unique
+  defaultLocale String   @map("default_locale")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  locations         Location[]
+  staffUsers        StaffUser[]
+  levels            Level[]
+  customers         Customer[]
+  serviceCategories ServiceCategory[]
+  services          Service[]
+  resourceTypes     ResourceType[]
+  appointments      Appointment[]
+  notificationLogs  NotificationLog[]
+  auditLogs         AuditLog[]
+  resources         Resource[]
+  segments          AppointmentSegment[]
+  workingHours      WorkingHours[]
+  timeOff           TimeOff[]
+  consents          NotificationConsent[]
+
+  @@map("organization")
+}
+
+model Location {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  name           String
+  address        String?
+  phone          String?
+  /// IANA time zone, e.g. America/New_York.
+  timezone       String
+  /// { slotIntervalMin, holdMinutes, cancelWindowHours, bookingHorizonDays, minLeadMinutes }
+  settings       Json
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization   Organization      @relation(fields: [organizationId], references: [id])
+  hours          LocationHours[]
+  closures       LocationClosure[]
+  staffLocations StaffLocation[]
+  workingHours   WorkingHours[]
+  timeOff        TimeOff[]
+  resources      Resource[]
+  appointments   Appointment[]
+
+  @@index([organizationId])
+  @@map("location")
+}
+
+model LocationHours {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  locationId String   @map("location_id") @db.Uuid
+  /// 0 = Sunday ... 6 = Saturday.
+  weekday    Int      @db.SmallInt
+  opens      DateTime @db.Time(0)
+  /// An end time of 00:00 that is not after the start means 24:00 (end of day). Overnight shifts are not supported. Repositories must map it to the engine's "24:00".
+  closes     DateTime @db.Time(0)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@index([locationId, weekday])
+  @@map("location_hours")
+}
+
+model LocationClosure {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  locationId String   @map("location_id") @db.Uuid
+  startsAt   DateTime @map("starts_at") @db.Timestamptz(3)
+  endsAt     DateTime @map("ends_at") @db.Timestamptz(3)
+  reason     String?
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@index([locationId, startsAt])
+  @@map("location_closure")
+}
+
+// ---------------------------------------------------------------- staff and auth
+
+model StaffUser {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  /// Unique per organization; null allowed when canLogin = false. Stored lowercased.
+  email          String?
+  canLogin       Boolean   @default(false) @map("can_login")
+  passwordHash   String?   @map("password_hash")
+  totpSecretEnc  String?   @map("totp_secret_enc")
+  totpEnrolledAt DateTime? @map("totp_enrolled_at") @db.Timestamptz(3)
+  role           StaffRole
+  locale         String
+  active         Boolean   @default(true)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization        Organization         @relation(fields: [organizationId], references: [id])
+  recoveryCodes       StaffRecoveryCode[]
+  authTokens          StaffAuthToken[]
+  staffLocations      StaffLocation[]
+  employeeProfile     EmployeeProfile?
+  employeeServices    EmployeeService[]
+  workingHours        WorkingHours[]
+  timeOff             TimeOff[]
+  segments            AppointmentSegment[]
+  createdAppointments Appointment[]        @relation("AppointmentCreatedBy")
+
+  @@unique([organizationId, email])
+  @@map("staff_user")
+}
+
+model StaffRecoveryCode {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  staffUserId String    @map("staff_user_id") @db.Uuid
+  codeHash    String    @map("code_hash")
+  usedAt      DateTime? @map("used_at") @db.Timestamptz(3)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  staffUser StaffUser @relation(fields: [staffUserId], references: [id], onDelete: Cascade)
+
+  @@index([staffUserId])
+  @@map("staff_recovery_code")
+}
+
+model StaffAuthToken {
+  id          String            @id @default(uuid(7)) @db.Uuid
+  staffUserId String            @map("staff_user_id") @db.Uuid
+  purpose     StaffTokenPurpose
+  tokenHash   String            @unique @map("token_hash")
+  expiresAt   DateTime          @map("expires_at") @db.Timestamptz(3)
+  usedAt      DateTime?         @map("used_at") @db.Timestamptz(3)
+  createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  staffUser StaffUser @relation(fields: [staffUserId], references: [id], onDelete: Cascade)
+
+  @@index([staffUserId])
+  @@map("staff_auth_token")
+}
+
+model StaffLocation {
+  staffUserId String   @map("staff_user_id") @db.Uuid
+  locationId  String   @map("location_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  staffUser StaffUser @relation(fields: [staffUserId], references: [id], onDelete: Cascade)
+  location  Location  @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@id([staffUserId, locationId])
+  @@index([locationId])
+  @@map("staff_location")
+}
+
+model Level {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  /// Translatable { "en", "es" }.
+  name           Json
+  rank           Int
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization        @relation(fields: [organizationId], references: [id])
+  employees    EmployeeProfile[]
+  prices       ServiceLevelPrice[]
+
+  @@index([organizationId])
+  @@map("level")
+}
+
+model EmployeeProfile {
+  staffUserId    String   @id @map("staff_user_id") @db.Uuid
+  displayName    String   @map("display_name")
+  /// Translatable { "en", "es" }.
+  bio            Json?
+  photoUrl       String?  @map("photo_url")
+  levelId        String?  @map("level_id") @db.Uuid
+  bookableOnline Boolean  @default(true) @map("bookable_online")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  staffUser StaffUser @relation(fields: [staffUserId], references: [id], onDelete: Cascade)
+  level     Level?    @relation(fields: [levelId], references: [id], onDelete: SetNull)
+
+  @@index([levelId])
+  @@map("employee_profile")
+}
+
+model EmployeeService {
+  staffUserId String   @map("staff_user_id") @db.Uuid
+  serviceId   String   @map("service_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  staffUser StaffUser @relation(fields: [staffUserId], references: [id], onDelete: Cascade)
+  service   Service   @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@id([staffUserId, serviceId])
+  @@index([serviceId])
+  @@map("employee_service")
+}
+
+/// Local wall-time shifts; several rows per weekday = breaks are the gaps.
+model WorkingHours {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  staffUserId    String   @map("staff_user_id") @db.Uuid
+  locationId     String   @map("location_id") @db.Uuid
+  /// 0 = Sunday ... 6 = Saturday.
+  weekday        Int      @db.SmallInt
+  startTime      DateTime @map("start_time") @db.Time(0)
+  /// An end time of 00:00 that is not after the start means 24:00 (end of day). Overnight shifts are not supported. Repositories must map it to the engine's "24:00".
+  endTime        DateTime @map("end_time") @db.Time(0)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  staffUser    StaffUser    @relation(fields: [staffUserId], references: [id], onDelete: Cascade)
+  location     Location     @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@index([staffUserId, locationId, weekday])
+  @@index([locationId])
+  @@index([organizationId])
+  @@map("working_hours")
+}
+
+model TimeOff {
+  id             String      @id @default(uuid(7)) @db.Uuid
+  organizationId String      @map("organization_id") @db.Uuid
+  staffUserId    String      @map("staff_user_id") @db.Uuid
+  /// Null = applies to all locations.
+  locationId     String?     @map("location_id") @db.Uuid
+  startsAt       DateTime    @map("starts_at") @db.Timestamptz(3)
+  endsAt         DateTime    @map("ends_at") @db.Timestamptz(3)
+  kind           TimeOffKind
+  note           String?
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  staffUser    StaffUser    @relation(fields: [staffUserId], references: [id], onDelete: Cascade)
+  location     Location?    @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@index([staffUserId, startsAt])
+  @@index([locationId])
+  @@index([organizationId])
+  @@map("time_off")
+}
+
+/// Opaque refresh tokens (hashed) for customers and staff; polymorphic subject, no FK.
+model RefreshToken {
+  id          String      @id @default(uuid(7)) @db.Uuid
+  subjectType SubjectType @map("subject_type")
+  subjectId   String      @map("subject_id") @db.Uuid
+  familyId    String      @map("family_id") @db.Uuid
+  tokenHash   String      @unique @map("token_hash")
+  expiresAt   DateTime    @map("expires_at") @db.Timestamptz(3)
+  rotatedAt   DateTime?   @map("rotated_at") @db.Timestamptz(3)
+  revokedAt   DateTime?   @map("revoked_at") @db.Timestamptz(3)
+  userAgent   String?     @map("user_agent")
+  ip          String?
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([familyId])
+  @@index([subjectType, subjectId])
+  @@map("refresh_token")
+}
+
+// ---------------------------------------------------------------- customers
+
+model Customer {
+  id              String     @id @default(uuid(7)) @db.Uuid
+  organizationId  String     @map("organization_id") @db.Uuid
+  phoneE164       String     @map("phone_e164")
+  /// Null until the customer enters it (the row is created at OTP verify).
+  name            String?
+  email           String?
+  locale          String
+  phoneVerifiedAt DateTime?  @map("phone_verified_at") @db.Timestamptz(3)
+  createdVia      CreatedVia @map("created_via")
+  /// Staff-only, AES-256-GCM application-level encryption.
+  privateNotesEnc String?    @map("private_notes_enc")
+  deletedAt       DateTime?  @map("deleted_at") @db.Timestamptz(3)
+  createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization     Organization          @relation(fields: [organizationId], references: [id])
+  consents         NotificationConsent[]
+  appointments     Appointment[]
+  notificationLogs NotificationLog[]
+
+  @@unique([organizationId, phoneE164])
+  @@map("customer")
+}
+
+/// Append-only history; current state = latest row per (customer, channel).
+model NotificationConsent {
+  id             String              @id @default(uuid(7)) @db.Uuid
+  organizationId String              @map("organization_id") @db.Uuid
+  customerId     String              @map("customer_id") @db.Uuid
+  channel        NotificationChannel
+  granted        Boolean
+  source         ConsentSource
+  changedAt      DateTime            @default(now()) @map("changed_at") @db.Timestamptz(3)
+
+  customer     Customer     @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@index([customerId, channel, changedAt])
+  @@index([organizationId])
+  @@map("notification_consent")
+}
+
+// ---------------------------------------------------------------- catalog and resources
+
+model ServiceCategory {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  /// Translatable { "en", "es" }.
+  name           Json
+  sort           Int      @default(0)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  services     Service[]
+
+  @@index([organizationId])
+  @@map("service_category")
+}
+
+model Service {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  categoryId     String?  @map("category_id") @db.Uuid
+  /// Translatable { "en", "es" }.
+  name           Json
+  /// Translatable { "en", "es" }.
+  description    Json?
+  durationMin    Int      @map("duration_min")
+  bufferAfterMin Int      @default(0) @map("buffer_after_min")
+  priceCents     Int      @map("price_cents")
+  parallelizable Boolean  @default(false)
+  resourceTypeId String?  @map("resource_type_id") @db.Uuid
+  onlineBookable Boolean  @default(true) @map("online_bookable")
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization     Organization         @relation(fields: [organizationId], references: [id])
+  category         ServiceCategory?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  resourceType     ResourceType?        @relation(fields: [resourceTypeId], references: [id], onDelete: Restrict)
+  levelPrices      ServiceLevelPrice[]
+  employeeServices EmployeeService[]
+  segments         AppointmentSegment[]
+
+  @@index([organizationId])
+  @@index([categoryId])
+  @@index([resourceTypeId])
+  @@map("service")
+}
+
+/// Per-level overrides of duration and price.
+model ServiceLevelPrice {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  serviceId   String   @map("service_id") @db.Uuid
+  levelId     String   @map("level_id") @db.Uuid
+  durationMin Int      @map("duration_min")
+  priceCents  Int      @map("price_cents")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  level   Level   @relation(fields: [levelId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceId, levelId])
+  @@index([levelId])
+  @@map("service_level_price")
+}
+
+model ResourceType {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  /// Translatable { "en", "es" }.
+  name           Json
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  resources    Resource[]
+  services     Service[]
+
+  @@index([organizationId])
+  @@map("resource_type")
+}
+
+model Resource {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  locationId     String   @map("location_id") @db.Uuid
+  resourceTypeId String   @map("resource_type_id") @db.Uuid
+  name           String
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  location     Location             @relation(fields: [locationId], references: [id])
+  resourceType ResourceType         @relation(fields: [resourceTypeId], references: [id])
+  segments     AppointmentSegment[]
+
+  @@index([organizationId])
+  @@index([locationId])
+  @@index([resourceTypeId])
+  @@map("resource")
+}
+
+// ---------------------------------------------------------------- appointments
+
+model Appointment {
+  id                    String            @id @default(uuid(7)) @db.Uuid
+  organizationId        String            @map("organization_id") @db.Uuid
+  locationId            String            @map("location_id") @db.Uuid
+  /// Null while HELD by an anonymous visitor.
+  customerId            String?           @map("customer_id") @db.Uuid
+  status                AppointmentStatus
+  source                AppointmentSource
+  holdExpiresAt         DateTime?         @map("hold_expires_at") @db.Timestamptz(3)
+  confirmedByCustomerAt DateTime?         @map("confirmed_by_customer_at") @db.Timestamptz(3)
+  manageVersion         Int               @default(0) @map("manage_version")
+  notes                 String?
+  createdByStaffId      String?           @map("created_by_staff_id") @db.Uuid
+  cancelledAt           DateTime?         @map("cancelled_at") @db.Timestamptz(3)
+  cancelReason          String?           @map("cancel_reason")
+  cancelledBy           ActorType?        @map("cancelled_by")
+  createdAt             DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization     Organization         @relation(fields: [organizationId], references: [id])
+  location         Location             @relation(fields: [locationId], references: [id])
+  customer         Customer?            @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  createdByStaff   StaffUser?           @relation("AppointmentCreatedBy", fields: [createdByStaffId], references: [id], onDelete: SetNull)
+  segments         AppointmentSegment[]
+  notificationLogs NotificationLog[]
+
+  @@index([locationId, status])
+  @@index([holdExpiresAt])
+  @@index([customerId])
+  @@index([organizationId])
+  @@map("appointment")
+}
+
+/// One service performed by one employee (optionally on one resource).
+/// Raw-SQL constraints (booking_constraints migration): no_employee_overlap,
+/// no_resource_overlap (EXCLUDE USING gist on [starts_at, block_ends_at) while
+/// occupies) and segment_time_order (starts_at < ends_at <= block_ends_at).
+model AppointmentSegment {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  appointmentId  String   @map("appointment_id") @db.Uuid
+  serviceId      String   @map("service_id") @db.Uuid
+  staffUserId    String   @map("staff_user_id") @db.Uuid
+  resourceId     String?  @map("resource_id") @db.Uuid
+  startsAt       DateTime @map("starts_at") @db.Timestamptz(3)
+  endsAt         DateTime @map("ends_at") @db.Timestamptz(3)
+  /// `ends_at + buffer_after_min`, or `ends_at` when the buffer is dropped for a same-employee
+  /// back-to-back segment (see availability.md); the API always stores `blockEnd` from the
+  /// validated plan, never recomputes it.
+  blockEndsAt    DateTime @map("block_ends_at") @db.Timestamptz(3)
+  /// Snapshot at booking time.
+  durationMin    Int      @map("duration_min")
+  /// Snapshot at booking time.
+  priceCents     Int      @map("price_cents")
+  /// False once the appointment is CANCELLED or NO_SHOW (same transaction).
+  occupies       Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  appointment  Appointment  @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  service      Service      @relation(fields: [serviceId], references: [id])
+  staffUser    StaffUser    @relation(fields: [staffUserId], references: [id])
+  resource     Resource?    @relation(fields: [resourceId], references: [id], onDelete: Restrict)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@index([appointmentId])
+  @@index([staffUserId, startsAt])
+  @@index([resourceId, startsAt])
+  @@index([serviceId])
+  @@index([organizationId, startsAt])
+  @@map("appointment_segment")
+}
+
+// ---------------------------------------------------------------- notifications and audit
+
+model NotificationLog {
+  id                String              @id @default(uuid(7)) @db.Uuid
+  organizationId    String              @map("organization_id") @db.Uuid
+  appointmentId     String?             @map("appointment_id") @db.Uuid
+  customerId        String?             @map("customer_id") @db.Uuid
+  templateKey       String              @map("template_key")
+  locale            String
+  channel           NotificationChannel
+  provider          String
+  providerMessageId String?             @map("provider_message_id")
+  status            NotificationStatus
+  error             String?
+  attempts          Int                 @default(0)
+  sentAt            DateTime?           @map("sent_at") @db.Timestamptz(3)
+  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  appointment  Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  customer     Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  @@index([providerMessageId])
+  @@index([appointmentId])
+  @@index([customerId])
+  @@index([organizationId])
+  @@map("notification_log")
+}
+
+/// Append-only; `at` is the event time.
+model AuditLog {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  actorType      ActorType @map("actor_type")
+  /// Null for SYSTEM.
+  actorId        String?   @map("actor_id") @db.Uuid
+  /// e.g. appointment.create, appointment.move, appointment.cancel
+  action         String
+  entity         String
+  /// Text so composite or non-UUID keys can be audited.
+  entityId       String?   @map("entity_id")
+  before         Json?
+  after          Json?
+  ip             String?
+  at             DateTime  @default(now()) @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId, at])
+  @@index([entity, entityId])
+  @@map("audit_log")
+}

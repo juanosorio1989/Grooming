@@ -1,0 +1,18 @@
+{
+  "extends": "@grooming/config/tsconfig.node.json",
+  "compilerOptions": {
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "outDir": "dist",
+    "isolatedModules": false
+  },
+  "include": [
+    "src",
+    "test",
+    "prisma",
+    "scripts",
+    "*.ts"
+  ]
+}
