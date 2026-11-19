@@ -29,7 +29,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@grooming/datetime": "workspace:*"
+    "@grooming/datetime": "workspace:*",
+    "@grooming/pricing": "workspace:*"
   },
   "devDependencies": {
     "@grooming/config": "workspace:*",

@@ -148,6 +148,9 @@ importers:
       '@grooming/datetime':
         specifier: workspace:*
         version: link:../datetime
+      '@grooming/pricing':
+        specifier: workspace:*
+        version: link:../pricing
     devDependencies:
       '@grooming/config':
         specifier: workspace:*

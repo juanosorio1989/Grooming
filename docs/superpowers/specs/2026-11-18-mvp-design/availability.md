@@ -11,21 +11,22 @@ DST handling are **unchanged**. This page lists the changes.
 findSlots({
   location,     // + dropOffWindows, maxQueueWaitMin, pickupGraceMin
   request: {
-    mode: 'WAIT' | 'DROP_OFF',
+    bookingMode: 'WAIT' | 'DROP_OFF',
     pets: [{ petId, sizeClass, coatType, species,
              services: [serviceId], preferredGroomerId | 'ANY' }],   // ≤ 4 pets, ≤ 6 services each
-    date | range,
+    date,                // one local date; the API loops over a range
   },
   services, prices,      // stage, resource type, required skill; service_price rows
   employees,             // skills, qualified services, hours, time off
   resources,             // stations and kennels by type
-  busy, mode: 'ONLINE' | 'STAFF', now,
+  busy,                  // kennel rows have employeeId: null
+  mode: 'ONLINE' | 'STAFF', now,
 }) -> Slot[]
 
 Slot = { start, readyAt, mode, pets: [{ petId, priceCents, segments: [...] }] }
 ```
 
-The request's `mode` is resolved by the API before calling: if any chosen
+The request's `bookingMode` is resolved by the API before calling: if any chosen
 service is `DROP_OFF` (own setting or location default), the whole appointment
 is drop-off **(call)**.
 
