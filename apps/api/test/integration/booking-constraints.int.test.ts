@@ -19,13 +19,20 @@ describe("appointment_segment booking constraints", () => {
     const rows = await prisma.$queryRaw<{ conname: string; contype: string }[]>`
       SELECT conname, contype::text AS contype FROM pg_constraint
       WHERE conrelid = 'appointment_segment'::regclass
-        AND conname IN ('no_employee_overlap', 'no_resource_overlap', 'segment_time_order')
+        AND conname IN ('no_employee_overlap', 'no_resource_overlap', 'segment_time_order', 'segment_staff_matches_stage')
       ORDER BY conname`;
     expect(rows).toEqual([
       { conname: "no_employee_overlap", contype: "x" },
       { conname: "no_resource_overlap", contype: "x" },
+      { conname: "segment_staff_matches_stage", contype: "c" },
       { conname: "segment_time_order", contype: "c" },
     ]);
+  });
+
+  it("has the partial unique index service_price_any_coat", async () => {
+    const rows = await prisma.$queryRaw<{ indexname: string }[]>`
+      SELECT indexname FROM pg_indexes WHERE indexname = 'service_price_any_coat'`;
+    expect(rows).toEqual([{ indexname: "service_price_any_coat" }]);
   });
 
   it("rejects overlapping segments for the same employee with 23P01", async () => {

@@ -72,7 +72,12 @@ ALTER TABLE appointment_segment ADD CONSTRAINT no_employee_overlap EXCLUDE USING
 ALTER TABLE appointment_segment ADD CONSTRAINT no_resource_overlap EXCLUDE USING gist (
   resource_id WITH =, tstzrange(starts_at, block_ends_at, '[)') WITH &&
 ) WHERE (occupies AND resource_id IS NOT NULL);
+
+ALTER TABLE appointment_segment ADD CONSTRAINT segment_staff_matches_stage CHECK ((stage = 'KENNEL') = (staff_user_id IS NULL) AND (stage <> 'KENNEL' OR resource_id IS NOT NULL));
 ```
+
+`segment_staff_matches_stage`: kennel segments have no person and must have a kennel resource; every other stage must have a person.
+Kennel segments store `duration_min` = hold length and `price_cents` = 0.
 
 Kennel segments are ordinary segments with `stage = KENNEL`, a kennel
 `resource_id` and no staff, so the resource constraint guards kennels too.

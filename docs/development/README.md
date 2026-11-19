@@ -7,6 +7,8 @@ pnpm --filter @grooming/api secrets:gen  # creates and fills .env
 docker compose up -d
 pnpm turbo run lint typecheck test
 pnpm --filter @grooming/api db:deploy
+pnpm --filter @grooming/api db:seed
+pnpm --filter @grooming/api db:drift   # schema vs migrations drift check (needs DATABASE_URL_TEST)
 pnpm --filter @grooming/api test:int
 ```
 

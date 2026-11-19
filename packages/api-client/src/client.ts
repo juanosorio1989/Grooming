@@ -30,7 +30,7 @@ export interface ApiClientOptions {
   onSessionExpired?: () => void;
   /**
    * Optional cross-context lock around each shared refresh (the refresh request
-   * runs inside `fn`). Web passes `(fn) => navigator.locks.request("bs-refresh", fn)`
+   * runs inside `fn`). Web passes `(fn) => navigator.locks.request("gr-refresh", fn)`
    * so two tabs never rotate the same refresh token at once.
    */
   refreshLock?: <T>(fn: () => Promise<T>) => Promise<T>;
