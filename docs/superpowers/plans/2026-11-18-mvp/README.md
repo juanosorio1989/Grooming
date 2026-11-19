@@ -9,7 +9,7 @@ written in detail, so each plan builds on real code, not guesses.
 
 | # | Plan | Delivers | Status |
 |---|---|---|---|
-| 01 | [Foundation, auth and schema](01-foundation.md) | Monorepo copied from BeautySpa `8a778d5` and renamed; `datetime`, `contracts`, `api-client`, availability base; NestJS API with auth; grooming Prisma schema with exclusion constraints (kennels included); SeaweedFS (local S3); CI | written |
+| 01 | [Foundation, auth and schema](01-foundation.md) | Monorepo copied from BeautySpa `8a778d5` and renamed; `datetime`, `contracts`, `api-client`, availability base; NestJS API with auth; grooming Prisma schema with exclusion constraints (kennels included); SeaweedFS (local S3); CI | merged |
 | 02 | Pure domain packages | `pricing` (size class, price matrix lookup), `tracking` (step state machine, ETA), grooming `availability` planner (stages, wait/pipelined, drop-off, kennels) with every test listed in availability.md | to write |
 | 03 | Catalog, staff, pets API | Services + price matrix, stages, skills, resources and kennels, schedules, settings, pets + vaccines, public reads incl. breeds, audit, full seeds | to write |
 | 04 | Booking API | `/availability`, holds with new pets, multi-pet booking, reschedule/move, cancel, walk-in, sweeper, export/delete incl. pets | to write |
