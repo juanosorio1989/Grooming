@@ -12,8 +12,9 @@ placeholder brand. Separate product from BeautySpa.
 ## Stack
 
 Node 22 (`.nvmrc`), pnpm 10, Turborepo 2, TypeScript strict
-(`noUncheckedIndexedAccess`), NestJS + Prisma + Postgres 16, Redis 7, SeaweedFS (local S3; MinIO images are no longer published; production is R2)
-for pet media, Mailpit for local mail. English only in code, docs and products.
+(`noUncheckedIndexedAccess`), NestJS + Prisma + Postgres 16, Redis 7, SeaweedFS
+(local S3, because MinIO images are no longer published; production is R2) for
+pet media, Mailpit for local mail. English only in code, docs and products.
 
 ## Local ports
 
