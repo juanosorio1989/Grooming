@@ -25,6 +25,8 @@ Raw SQL in the init migration (not modelled by Prisma; tests in
 `grooming-constraints.int.test.ts`):
 
 - `appointment_segment.segment_time_order`: `starts_at < ends_at <= block_ends_at`.
+- `segment_staff_matches_stage`: `KENNEL` segments have no person and a kennel
+  `resource_id`; every other stage has a person.
 - `no_employee_overlap`: no two occupying segments of one person overlap
   (only rows with a `staff_user_id`; kennel segments have none).
 - `no_resource_overlap`: no two occupying segments on one station or kennel overlap.

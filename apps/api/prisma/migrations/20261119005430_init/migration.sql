@@ -1112,6 +1112,7 @@ ALTER TABLE "audit_log" ADD CONSTRAINT "audit_log_organization_id_fkey" FOREIGN 
 --   DROP INDEX IF EXISTS service_price_any_coat;
 --   ALTER TABLE appointment_segment DROP CONSTRAINT IF EXISTS no_resource_overlap;
 --   ALTER TABLE appointment_segment DROP CONSTRAINT IF EXISTS no_employee_overlap;
+--   ALTER TABLE appointment_segment DROP CONSTRAINT IF EXISTS segment_staff_matches_stage;
 --   ALTER TABLE appointment_segment DROP CONSTRAINT IF EXISTS segment_time_order;
 --   (btree_gist is left installed; it is harmless.)
 --   Reverting the whole init migration means dropping the schema; on a fresh
@@ -1121,6 +1122,12 @@ CREATE EXTENSION IF NOT EXISTS btree_gist;
 
 ALTER TABLE appointment_segment
   ADD CONSTRAINT segment_time_order CHECK (starts_at < ends_at AND ends_at <= block_ends_at);
+
+-- Kennel segments have no person and a kennel resource; every other stage has a person.
+ALTER TABLE appointment_segment
+  ADD CONSTRAINT segment_staff_matches_stage CHECK (
+    (stage = 'KENNEL') = (staff_user_id IS NULL) AND (stage <> 'KENNEL' OR resource_id IS NOT NULL)
+  );
 
 -- Person segments only: kennel segments have no staff_user_id.
 ALTER TABLE appointment_segment

@@ -2,7 +2,8 @@
  * Idempotent development seed: one organization, one location (America/New_York)
  * with hours and the grooming settings defaults, and the station and kennel
  * resources. Safe to run repeatedly (finds by natural keys, creates what is
- * missing). The full catalog and sample data come in Plan 03.
+ * missing). Each run resets `location.settings` to the spec defaults below.
+ * The full catalog and sample data come in Plan 03.
  * Run: pnpm --filter @grooming/api db:seed (uses DATABASE_URL).
  */
 import { type Prisma, PrismaClient, type ResourceKind } from "@prisma/client";

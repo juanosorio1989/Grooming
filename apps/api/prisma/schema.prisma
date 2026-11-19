@@ -892,8 +892,10 @@ model Appointment {
 /// Raw-SQL constraints (init migration): no_employee_overlap (where staff_user_id
 /// is set), no_resource_overlap (where resource_id is set; guards kennels too),
 /// both EXCLUDE USING gist on [starts_at, block_ends_at) while occupies, and
-/// segment_time_order (starts_at < ends_at <= block_ends_at). Pickup sets a kennel
-/// segment's ends_at and block_ends_at to now in the same transaction.
+/// segment_time_order (starts_at < ends_at <= block_ends_at), and
+/// segment_staff_matches_stage (KENNEL: no staff, resource set; other stages: staff set).
+/// Pickup sets a kennel segment's ends_at and block_ends_at to now in the same transaction.
+/// Kennel segments store duration_min = the hold length in minutes and price_cents = 0 (no service).
 model AppointmentSegment {
   id             String       @id @default(uuid(7)) @db.Uuid
   organizationId String       @map("organization_id") @db.Uuid

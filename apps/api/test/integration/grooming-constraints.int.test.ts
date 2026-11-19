@@ -59,6 +59,37 @@ describe("person segments", () => {
   });
 });
 
+describe("segment staff matches stage", () => {
+  it("non-kennel segment requires a staff member", async () => {
+    const code = await rejectionCode(
+      bookSegment(prisma, f, { staffUserId: null, stage: "BATH", startsAt: "09:00", endsAt: "10:00" }),
+    );
+    expect(code).toBe("23514");
+  });
+
+  it("kennel segment cannot have a staff member or miss its kennel", async () => {
+    const withStaff = bookSegment(prisma, f, {
+      staffUserId: f.staffA,
+      serviceId: null,
+      stage: "KENNEL",
+      resourceId: f.kennel1,
+      startsAt: "09:00",
+      endsAt: "13:00",
+    });
+    expect(await rejectionCode(withStaff)).toBe("23514");
+    const noKennel = bookSegment(prisma, f, {
+      staffUserId: null,
+      serviceId: null,
+      stage: "KENNEL",
+      resourceId: null,
+      startsAt: "09:00",
+      endsAt: "13:00",
+    });
+    expect(await rejectionCode(noKennel)).toBe("23514");
+    expect(await prisma.appointmentSegment.count()).toBe(0);
+  });
+});
+
 describe("offline idempotency keys", () => {
   it("client_ref is unique per organization (visit_step)", async () => {
     const other = await seedFixture(prisma, { slug: "test-salon-b" });
