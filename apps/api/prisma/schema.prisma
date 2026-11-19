@@ -1,0 +1,1159 @@
+// Grooming data model. Authority: docs/superpowers/specs/2026-11-18-mvp-design/data-model.md
+// (table index: docs/data/README.md). Copied tables follow the source repo (docs/provenance.md).
+//
+// Conventions: UUID v7 ids, snake_case tables/columns (@@map/@map), timestamptz(3)
+// in UTC, money in integer cents, translatable text as jsonb { "en", "es" }.
+// Weights in integer grams. Every tenant table has organization_id with a
+// restrictive FK. Raw SQL at the end of the `init` migration (Prisma does not
+// model it): exclusion constraints and segment_time_order on
+// appointment_segment, and the partial unique index service_price_any_coat.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------- enums
+
+enum StaffRole {
+  OWNER
+  RECEPTION
+  EMPLOYEE
+
+  @@map("staff_role")
+}
+
+enum StaffTokenPurpose {
+  INVITE
+  PASSWORD_RESET
+
+  @@map("staff_token_purpose")
+}
+
+enum TimeOffKind {
+  VACATION
+  BLOCK
+
+  @@map("time_off_kind")
+}
+
+enum SubjectType {
+  CUSTOMER @map("customer")
+  STAFF    @map("staff")
+
+  @@map("subject_type")
+}
+
+enum CreatedVia {
+  ONLINE
+  RECEPTION
+
+  @@map("created_via")
+}
+
+enum NotificationChannel {
+  WHATSAPP
+  SMS
+  EMAIL
+
+  @@map("notification_channel")
+}
+
+enum ConsentSource {
+  BOOKING_FORM
+  PROFILE
+  RECEPTION
+  INBOUND_STOP
+
+  @@map("consent_source")
+}
+
+enum AppointmentStatus {
+  HELD
+  BOOKED
+  IN_SHOP
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+
+  @@map("appointment_status")
+}
+
+enum AppointmentSource {
+  ONLINE
+  RECEPTION
+  WALK_IN
+
+  @@map("appointment_source")
+}
+
+enum NotificationStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+  SKIPPED
+
+  @@map("notification_status")
+}
+
+enum ActorType {
+  STAFF
+  CUSTOMER
+  SYSTEM
+
+  @@map("actor_type")
+}
+
+enum Species {
+  DOG
+  CAT
+
+  @@map("species")
+}
+
+enum ServiceSpecies {
+  DOG
+  CAT
+  ANY
+
+  @@map("service_species")
+}
+
+enum SizeClass {
+  S
+  M
+  L
+  XL
+
+  @@map("size_class")
+}
+
+enum CoatType {
+  SMOOTH
+  DOUBLE
+  CURLY
+  WIRE
+  LONG
+  HAIRLESS
+
+  @@map("coat_type")
+}
+
+enum Temperament {
+  CALM
+  NERVOUS
+  REACTIVE
+  NEEDS_MUZZLE
+
+  @@map("temperament")
+}
+
+enum PetSex {
+  MALE
+  FEMALE
+
+  @@map("pet_sex")
+}
+
+enum VaccineType {
+  RABIES
+  DHPP
+  BORDETELLA
+  FVRCP
+  OTHER
+
+  @@map("vaccine_type")
+}
+
+enum MediaKind {
+  PET_PHOTO
+  VACCINE_CARD
+  BEFORE
+  AFTER
+  STEP
+
+  @@map("media_kind")
+}
+
+enum MediaStatus {
+  PENDING
+  READY
+
+  @@map("media_status")
+}
+
+/// Service stages (a service belongs to one).
+enum Stage {
+  BATH
+  DRY
+  GROOM
+  FINISH
+
+  @@map("stage")
+}
+
+/// Segment stages: the service stages plus KENNEL (no person).
+enum SegmentStage {
+  BATH
+  DRY
+  GROOM
+  FINISH
+  KENNEL
+
+  @@map("segment_stage")
+}
+
+/// Tracking steps shown to staff and owners.
+enum StepStage {
+  RECEIVED
+  BATH
+  DRY
+  GROOM
+  FINISH
+  READY
+
+  @@map("step_stage")
+}
+
+enum StepStatus {
+  PENDING
+  IN_PROGRESS
+  DONE
+  SKIPPED
+
+  @@map("step_status")
+}
+
+enum PetVisitStatus {
+  BOOKED
+  RECEIVED
+  IN_PROGRESS
+  READY
+  PICKED_UP
+  CANCELLED
+  NO_SHOW
+
+  @@map("pet_visit_status")
+}
+
+enum BookingMode {
+  WAIT
+  DROP_OFF
+
+  @@map("booking_mode")
+}
+
+enum Skill {
+  BATHER
+  GROOMER
+
+  @@map("skill")
+}
+
+enum ResourceKind {
+  STATION
+  KENNEL
+
+  @@map("resource_kind")
+}
+
+enum ObservationKind {
+  MATTING
+  FLEAS
+  TICKS
+  SKIN_IRRITATION
+  EAR_ISSUE
+  NAIL_ISSUE
+  LUMP
+  OTHER
+
+  @@map("observation_kind")
+}
+
+enum Severity {
+  LOW
+  MEDIUM
+  HIGH
+
+  @@map("severity")
+}
+
+enum PaymentMethod {
+  CASH
+  CARD_EXTERNAL
+  ZELLE
+  VENMO
+  OTHER
+
+  @@map("payment_method")
+}
+
+// ---------------------------------------------------------------- tenancy
+
+model Organization {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  name          String
+  slug          String   @unique
+  defaultLocale String   @map("default_locale")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  locations         Location[]
+  staffUsers        StaffUser[]
+  customers         Customer[]
+  serviceCategories ServiceCategory[]
+  services          Service[]
+  resourceTypes     ResourceType[]
+  appointments      Appointment[]
+  notificationLogs  NotificationLog[]
+  auditLogs         AuditLog[]
+  resources         Resource[]
+  segments          AppointmentSegment[]
+  workingHours      WorkingHours[]
+  timeOff           TimeOff[]
+  consents          NotificationConsent[]
+  pets              Pet[]
+  petVaccines       PetVaccine[]
+  media             Media[]
+  servicePrices     ServicePrice[]
+  petVisits         PetVisit[]
+  petVisitServices  PetVisitService[]
+  visitSteps        VisitStep[]
+  visitObservations VisitObservation[]
+  visitReports      VisitReport[]
+  paymentRecords    PaymentRecord[]
+
+  @@map("organization")
+}
+
+model Location {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  name           String
+  address        String?
+  phone          String?
+  /// IANA time zone, e.g. America/New_York.
+  timezone       String
+  /// { slotIntervalMin, holdMinutes, cancelWindowHours, bookingHorizonDays, minLeadMinutes,
+  /// defaultBookingMode, dropOffWindows, maxQueueWaitMin, pickupGraceMin, sizeThresholdsLb,
+  /// requireAfterPhoto, vaccinePolicy, requiredVaccines, etaNotifyThresholdMin }; validated in the API.
+  settings       Json
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization   Organization      @relation(fields: [organizationId], references: [id])
+  hours          LocationHours[]
+  closures       LocationClosure[]
+  staffLocations StaffLocation[]
+  workingHours   WorkingHours[]
+  timeOff        TimeOff[]
+  resources      Resource[]
+  appointments   Appointment[]
+
+  @@index([organizationId])
+  @@map("location")
+}
+
+model LocationHours {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  locationId String   @map("location_id") @db.Uuid
+  /// 0 = Sunday ... 6 = Saturday.
+  weekday    Int      @db.SmallInt
+  opens      DateTime @db.Time(0)
+  /// An end time of 00:00 that is not after the start means 24:00 (end of day). Overnight shifts are not supported. Repositories must map it to the engine's "24:00".
+  closes     DateTime @db.Time(0)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@index([locationId, weekday])
+  @@map("location_hours")
+}
+
+model LocationClosure {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  locationId String   @map("location_id") @db.Uuid
+  startsAt   DateTime @map("starts_at") @db.Timestamptz(3)
+  endsAt     DateTime @map("ends_at") @db.Timestamptz(3)
+  reason     String?
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@index([locationId, startsAt])
+  @@map("location_closure")
+}
+
+// ---------------------------------------------------------------- staff and auth
+
+model StaffUser {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  /// Unique per organization; null allowed when canLogin = false. Stored lowercased.
+  email          String?
+  canLogin       Boolean   @default(false) @map("can_login")
+  passwordHash   String?   @map("password_hash")
+  totpSecretEnc  String?   @map("totp_secret_enc")
+  totpEnrolledAt DateTime? @map("totp_enrolled_at") @db.Timestamptz(3)
+  role           StaffRole
+  locale         String
+  active         Boolean   @default(true)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization        Organization         @relation(fields: [organizationId], references: [id])
+  recoveryCodes       StaffRecoveryCode[]
+  authTokens          StaffAuthToken[]
+  staffLocations      StaffLocation[]
+  employeeProfile     EmployeeProfile?
+  employeeServices    EmployeeService[]
+  workingHours        WorkingHours[]
+  timeOff             TimeOff[]
+  segments            AppointmentSegment[]
+  createdAppointments Appointment[]        @relation("AppointmentCreatedBy")
+  verifiedVaccines    PetVaccine[]         @relation("PetVaccineVerifiedBy")
+  preferredVisits     PetVisit[]           @relation("PetVisitPreferredGroomer")
+  performedSteps      VisitStep[]          @relation("VisitStepPerformedBy")
+  recordedSteps       VisitStep[]          @relation("VisitStepRecordedBy")
+  observations        VisitObservation[]
+  paymentRecords      PaymentRecord[]
+
+  @@unique([organizationId, email])
+  @@map("staff_user")
+}
+
+model StaffRecoveryCode {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  staffUserId String    @map("staff_user_id") @db.Uuid
+  codeHash    String    @map("code_hash")
+  usedAt      DateTime? @map("used_at") @db.Timestamptz(3)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  staffUser StaffUser @relation(fields: [staffUserId], references: [id], onDelete: Cascade)
+
+  @@index([staffUserId])
+  @@map("staff_recovery_code")
+}
+
+model StaffAuthToken {
+  id          String            @id @default(uuid(7)) @db.Uuid
+  staffUserId String            @map("staff_user_id") @db.Uuid
+  purpose     StaffTokenPurpose
+  tokenHash   String            @unique @map("token_hash")
+  expiresAt   DateTime          @map("expires_at") @db.Timestamptz(3)
+  usedAt      DateTime?         @map("used_at") @db.Timestamptz(3)
+  createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  staffUser StaffUser @relation(fields: [staffUserId], references: [id], onDelete: Cascade)
+
+  @@index([staffUserId])
+  @@map("staff_auth_token")
+}
+
+model StaffLocation {
+  staffUserId String   @map("staff_user_id") @db.Uuid
+  locationId  String   @map("location_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  staffUser StaffUser @relation(fields: [staffUserId], references: [id], onDelete: Cascade)
+  location  Location  @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@id([staffUserId, locationId])
+  @@index([locationId])
+  @@map("staff_location")
+}
+
+model EmployeeProfile {
+  staffUserId    String   @id @map("staff_user_id") @db.Uuid
+  displayName    String   @map("display_name")
+  /// Translatable { "en", "es" }.
+  bio            Json?
+  photoUrl       String?  @map("photo_url")
+  /// BATHER, GROOMER or both.
+  skills         Skill[]  @default([])
+  bookableOnline Boolean  @default(true) @map("bookable_online")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  staffUser StaffUser @relation(fields: [staffUserId], references: [id], onDelete: Cascade)
+
+  @@map("employee_profile")
+}
+
+model EmployeeService {
+  staffUserId String   @map("staff_user_id") @db.Uuid
+  serviceId   String   @map("service_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  staffUser StaffUser @relation(fields: [staffUserId], references: [id], onDelete: Cascade)
+  service   Service   @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@id([staffUserId, serviceId])
+  @@index([serviceId])
+  @@map("employee_service")
+}
+
+/// Local wall-time shifts; several rows per weekday = breaks are the gaps.
+model WorkingHours {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  staffUserId    String   @map("staff_user_id") @db.Uuid
+  locationId     String   @map("location_id") @db.Uuid
+  /// 0 = Sunday ... 6 = Saturday.
+  weekday        Int      @db.SmallInt
+  startTime      DateTime @map("start_time") @db.Time(0)
+  /// An end time of 00:00 that is not after the start means 24:00 (end of day). Overnight shifts are not supported. Repositories must map it to the engine's "24:00".
+  endTime        DateTime @map("end_time") @db.Time(0)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  staffUser    StaffUser    @relation(fields: [staffUserId], references: [id], onDelete: Cascade)
+  location     Location     @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@index([staffUserId, locationId, weekday])
+  @@index([locationId])
+  @@index([organizationId])
+  @@map("working_hours")
+}
+
+model TimeOff {
+  id             String      @id @default(uuid(7)) @db.Uuid
+  organizationId String      @map("organization_id") @db.Uuid
+  staffUserId    String      @map("staff_user_id") @db.Uuid
+  /// Null = applies to all locations.
+  locationId     String?     @map("location_id") @db.Uuid
+  startsAt       DateTime    @map("starts_at") @db.Timestamptz(3)
+  endsAt         DateTime    @map("ends_at") @db.Timestamptz(3)
+  kind           TimeOffKind
+  note           String?
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  staffUser    StaffUser    @relation(fields: [staffUserId], references: [id], onDelete: Cascade)
+  location     Location?    @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@index([staffUserId, startsAt])
+  @@index([locationId])
+  @@index([organizationId])
+  @@map("time_off")
+}
+
+/// Opaque refresh tokens (hashed) for customers and staff; polymorphic subject, no FK.
+model RefreshToken {
+  id          String      @id @default(uuid(7)) @db.Uuid
+  subjectType SubjectType @map("subject_type")
+  subjectId   String      @map("subject_id") @db.Uuid
+  familyId    String      @map("family_id") @db.Uuid
+  tokenHash   String      @unique @map("token_hash")
+  expiresAt   DateTime    @map("expires_at") @db.Timestamptz(3)
+  rotatedAt   DateTime?   @map("rotated_at") @db.Timestamptz(3)
+  revokedAt   DateTime?   @map("revoked_at") @db.Timestamptz(3)
+  userAgent   String?     @map("user_agent")
+  ip          String?
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([familyId])
+  @@index([subjectType, subjectId])
+  @@map("refresh_token")
+}
+
+// ---------------------------------------------------------------- customers
+
+model Customer {
+  id                 String     @id @default(uuid(7)) @db.Uuid
+  organizationId     String     @map("organization_id") @db.Uuid
+  phoneE164          String     @map("phone_e164")
+  emergencyPhoneE164 String?    @map("emergency_phone_e164")
+  /// Null until the customer enters it (the row is created at OTP verify).
+  name               String?
+  email              String?
+  locale             String
+  phoneVerifiedAt    DateTime?  @map("phone_verified_at") @db.Timestamptz(3)
+  createdVia         CreatedVia @map("created_via")
+  /// Staff-only, AES-256-GCM encrypted by the application.
+  privateNotesEnc    String?    @map("private_notes_enc")
+  deletedAt          DateTime?  @map("deleted_at") @db.Timestamptz(3)
+  createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization     Organization          @relation(fields: [organizationId], references: [id])
+  consents         NotificationConsent[]
+  appointments     Appointment[]
+  notificationLogs NotificationLog[]
+  pets             Pet[]
+
+  @@unique([organizationId, phoneE164])
+  @@map("customer")
+}
+
+/// Append-only history; current state = latest row per (customer, channel).
+model NotificationConsent {
+  id             String              @id @default(uuid(7)) @db.Uuid
+  organizationId String              @map("organization_id") @db.Uuid
+  customerId     String              @map("customer_id") @db.Uuid
+  channel        NotificationChannel
+  granted        Boolean
+  source         ConsentSource
+  changedAt      DateTime            @default(now()) @map("changed_at") @db.Timestamptz(3)
+
+  customer     Customer     @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@index([customerId, channel, changedAt])
+  @@index([organizationId])
+  @@map("notification_consent")
+}
+
+// ---------------------------------------------------------------- pets
+
+model Pet {
+  id               String        @id @default(uuid(7)) @db.Uuid
+  organizationId   String        @map("organization_id") @db.Uuid
+  customerId       String        @map("customer_id") @db.Uuid
+  name             String
+  species          Species
+  /// Free text; breedCode links the seeded breed list when picked from it.
+  breed            String
+  breedCode        String?       @map("breed_code")
+  /// Month precision is fine (day 1).
+  birthDate        DateTime?     @map("birth_date") @db.Date
+  /// Null = unknown.
+  sex              PetSex?
+  neutered         Boolean?
+  /// Grams.
+  weightG          Int?          @map("weight_g")
+  weightMeasuredAt DateTime?     @map("weight_measured_at") @db.Timestamptz(3)
+  /// Derived from weightG and the location's sizeThresholdsLb on write, stored.
+  sizeClass        SizeClass?    @map("size_class")
+  coatType         CoatType?     @map("coat_type")
+  temperament      Temperament[] @default([])
+  allergies        String[]      @default([])
+  /// AES-256-GCM encrypted by the application (same format as the other *_enc columns).
+  medicalNotesEnc  String?       @map("medical_notes_enc")
+  behaviorNotes    String?       @map("behavior_notes")
+  vetName          String?       @map("vet_name")
+  vetPhoneE164     String?       @map("vet_phone_e164")
+  photoMediaId     String?       @map("photo_media_id") @db.Uuid
+  deletedAt        DateTime?     @map("deleted_at") @db.Timestamptz(3)
+  createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  customer     Customer     @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  photo        Media?       @relation("PetPhoto", fields: [photoMediaId], references: [id], onDelete: SetNull)
+  vaccines     PetVaccine[]
+  media        Media[]      @relation("PetMedia")
+  visits       PetVisit[]
+
+  @@index([organizationId])
+  @@index([customerId])
+  @@index([photoMediaId])
+  @@map("pet")
+}
+
+/// Owner-entered until staff verifies (verified_at / verified_by_staff_id set).
+model PetVaccine {
+  id                String      @id @default(uuid(7)) @db.Uuid
+  organizationId    String      @map("organization_id") @db.Uuid
+  petId             String      @map("pet_id") @db.Uuid
+  type              VaccineType
+  expiresOn         DateTime    @map("expires_on") @db.Date
+  cardMediaId       String?     @map("card_media_id") @db.Uuid
+  verifiedByStaffId String?     @map("verified_by_staff_id") @db.Uuid
+  verifiedAt        DateTime?   @map("verified_at") @db.Timestamptz(3)
+  createdAt         DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  pet          Pet          @relation(fields: [petId], references: [id], onDelete: Cascade)
+  card         Media?       @relation(fields: [cardMediaId], references: [id], onDelete: SetNull)
+  verifiedBy   StaffUser?   @relation("PetVaccineVerifiedBy", fields: [verifiedByStaffId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId])
+  @@index([petId])
+  @@index([cardMediaId])
+  @@index([verifiedByStaffId])
+  @@map("pet_vaccine")
+}
+
+/// Uploaded objects (S3 key); uploader is polymorphic (no FK).
+model Media {
+  id             String      @id @default(uuid(7)) @db.Uuid
+  organizationId String      @map("organization_id") @db.Uuid
+  kind           MediaKind
+  objectKey      String      @unique @map("object_key")
+  contentType    String      @map("content_type")
+  /// Object size; null until the upload completes.
+  bytes          Int?
+  petId          String      @map("pet_id") @db.Uuid
+  visitId        String?     @map("visit_id") @db.Uuid
+  uploadedByType ActorType   @map("uploaded_by_type")
+  uploadedById   String?     @map("uploaded_by_id") @db.Uuid
+  status         MediaStatus @default(PENDING)
+  /// Idempotency key from the offline queue; unique per organization.
+  clientRef      String?     @map("client_ref")
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  pet          Pet                @relation("PetMedia", fields: [petId], references: [id], onDelete: Restrict)
+  visit        PetVisit?          @relation(fields: [visitId], references: [id], onDelete: Restrict)
+  petPhotoOf   Pet[]              @relation("PetPhoto")
+  vaccineCards PetVaccine[]
+  observations VisitObservation[]
+
+  @@unique([organizationId, clientRef])
+  @@index([petId])
+  @@index([visitId])
+  @@map("media")
+}
+
+// ---------------------------------------------------------------- catalog and resources
+
+model ServiceCategory {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  /// Translatable { "en", "es" }.
+  name           Json
+  sort           Int      @default(0)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  services     Service[]
+
+  @@index([organizationId])
+  @@map("service_category")
+}
+
+model Service {
+  id             String         @id @default(uuid(7)) @db.Uuid
+  organizationId String         @map("organization_id") @db.Uuid
+  categoryId     String?        @map("category_id") @db.Uuid
+  /// Translatable { "en", "es" }.
+  name           Json
+  /// Translatable { "en", "es" }.
+  description    Json?
+  species        ServiceSpecies
+  stage          Stage
+  /// A main service (vs. an add-on).
+  isMain         Boolean        @map("is_main")
+  /// All services of one pet in the same stage must share it (admin validation).
+  resourceTypeId String?        @map("resource_type_id") @db.Uuid
+  requiredSkill  Skill          @map("required_skill")
+  /// Null = location default.
+  bookingMode    BookingMode?   @map("booking_mode")
+  bufferAfterMin Int            @default(0) @map("buffer_after_min")
+  onlineBookable Boolean        @default(true) @map("online_bookable")
+  active         Boolean        @default(true)
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization     Organization         @relation(fields: [organizationId], references: [id])
+  category         ServiceCategory?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  resourceType     ResourceType?        @relation(fields: [resourceTypeId], references: [id], onDelete: Restrict)
+  prices           ServicePrice[]
+  employeeServices EmployeeService[]
+  segments         AppointmentSegment[]
+  visitServices    PetVisitService[]
+
+  @@index([organizationId])
+  @@index([categoryId])
+  @@index([resourceTypeId])
+  @@map("service")
+}
+
+/// Duration and price per size class and coat. Lookup: exact coat row, else the
+/// NULL-coat row, else the service is not offered for that pet. The partial
+/// unique index service_price_any_coat (raw SQL) allows one NULL-coat row per
+/// (service, size), because Postgres treats NULLs as distinct in the unique below.
+model ServicePrice {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  serviceId      String    @map("service_id") @db.Uuid
+  sizeClass      SizeClass @map("size_class")
+  /// Null = any coat.
+  coatType       CoatType? @map("coat_type")
+  durationMin    Int       @map("duration_min")
+  priceCents     Int       @map("price_cents")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  service      Service      @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceId, sizeClass, coatType])
+  @@index([organizationId])
+  @@map("service_price")
+}
+
+model ResourceType {
+  id             String       @id @default(uuid(7)) @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  /// Translatable { "en", "es" }.
+  name           Json
+  /// STATION (tub, table, dryer) or KENNEL.
+  kind           ResourceKind
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  resources    Resource[]
+  services     Service[]
+
+  @@index([organizationId])
+  @@map("resource_type")
+}
+
+model Resource {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  locationId     String   @map("location_id") @db.Uuid
+  resourceTypeId String   @map("resource_type_id") @db.Uuid
+  name           String
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  location     Location             @relation(fields: [locationId], references: [id])
+  resourceType ResourceType         @relation(fields: [resourceTypeId], references: [id])
+  segments     AppointmentSegment[]
+  kennelVisits PetVisit[]
+
+  @@index([organizationId])
+  @@index([locationId])
+  @@index([resourceTypeId])
+  @@map("resource")
+}
+
+// ---------------------------------------------------------------- appointments
+
+model Appointment {
+  id                    String            @id @default(uuid(7)) @db.Uuid
+  organizationId        String            @map("organization_id") @db.Uuid
+  locationId            String            @map("location_id") @db.Uuid
+  /// Null while HELD by an anonymous visitor.
+  customerId            String?           @map("customer_id") @db.Uuid
+  status                AppointmentStatus
+  source                AppointmentSource
+  bookingMode           BookingMode       @map("booking_mode")
+  /// Drop-off mode only.
+  dropOffAt             DateTime?         @map("drop_off_at") @db.Timestamptz(3)
+  /// Latest segment end across pets at booking time.
+  estimatedReadyAt      DateTime?         @map("estimated_ready_at") @db.Timestamptz(3)
+  checkedInAt           DateTime?         @map("checked_in_at") @db.Timestamptz(3)
+  completedAt           DateTime?         @map("completed_at") @db.Timestamptz(3)
+  holdExpiresAt         DateTime?         @map("hold_expires_at") @db.Timestamptz(3)
+  confirmedByCustomerAt DateTime?         @map("confirmed_by_customer_at") @db.Timestamptz(3)
+  manageVersion         Int               @default(0) @map("manage_version")
+  notes                 String?
+  createdByStaffId      String?           @map("created_by_staff_id") @db.Uuid
+  cancelledAt           DateTime?         @map("cancelled_at") @db.Timestamptz(3)
+  cancelReason          String?           @map("cancel_reason")
+  cancelledBy           ActorType?        @map("cancelled_by")
+  createdAt             DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization     Organization         @relation(fields: [organizationId], references: [id])
+  location         Location             @relation(fields: [locationId], references: [id])
+  customer         Customer?            @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  createdByStaff   StaffUser?           @relation("AppointmentCreatedBy", fields: [createdByStaffId], references: [id], onDelete: SetNull)
+  segments         AppointmentSegment[]
+  notificationLogs NotificationLog[]
+  petVisits        PetVisit[]
+  paymentRecords   PaymentRecord[]
+
+  @@index([locationId, status])
+  @@index([holdExpiresAt])
+  @@index([customerId])
+  @@index([organizationId])
+  @@map("appointment")
+}
+
+/// One stage of one pet visit: a person (optionally on a station), or a kennel
+/// (stage KENNEL, kennel resource_id, no person, no service). Merged stage and
+/// kennel segments list their services through pet_visit_service.
+/// Raw-SQL constraints (init migration): no_employee_overlap (where staff_user_id
+/// is set), no_resource_overlap (where resource_id is set; guards kennels too),
+/// both EXCLUDE USING gist on [starts_at, block_ends_at) while occupies, and
+/// segment_time_order (starts_at < ends_at <= block_ends_at), and
+/// segment_staff_matches_stage (KENNEL: no staff, resource set; other stages: staff set).
+/// Pickup sets a kennel segment's ends_at and block_ends_at to now in the same transaction.
+/// Kennel segments store duration_min = the hold length in minutes and price_cents = 0 (no service).
+model AppointmentSegment {
+  id             String       @id @default(uuid(7)) @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  appointmentId  String       @map("appointment_id") @db.Uuid
+  petVisitId     String       @map("pet_visit_id") @db.Uuid
+  stage          SegmentStage
+  /// Null for merged-stage and kennel segments.
+  serviceId      String?      @map("service_id") @db.Uuid
+  /// Null for kennel segments (no person).
+  staffUserId    String?      @map("staff_user_id") @db.Uuid
+  resourceId     String?      @map("resource_id") @db.Uuid
+  startsAt       DateTime     @map("starts_at") @db.Timestamptz(3)
+  endsAt         DateTime     @map("ends_at") @db.Timestamptz(3)
+  /// `ends_at + buffer_after_min`, or `ends_at` when the buffer is dropped for a same-employee
+  /// back-to-back segment (see availability.md); the API always stores `blockEnd` from the
+  /// validated plan, never recomputes it.
+  blockEndsAt    DateTime     @map("block_ends_at") @db.Timestamptz(3)
+  /// Snapshot at booking time.
+  durationMin    Int          @map("duration_min")
+  /// Snapshot at booking time.
+  priceCents     Int          @map("price_cents")
+  /// False once the appointment is CANCELLED or NO_SHOW (same transaction).
+  occupies       Boolean      @default(true)
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  appointment  Appointment  @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  petVisit     PetVisit     @relation(fields: [petVisitId], references: [id], onDelete: Cascade)
+  service      Service?     @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  staffUser    StaffUser?   @relation(fields: [staffUserId], references: [id], onDelete: Restrict)
+  resource     Resource?    @relation(fields: [resourceId], references: [id], onDelete: Restrict)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@index([appointmentId])
+  @@index([petVisitId])
+  @@index([staffUserId, startsAt])
+  @@index([resourceId, startsAt])
+  @@index([serviceId])
+  @@index([organizationId, startsAt])
+  @@map("appointment_segment")
+}
+
+/// One pet in one appointment.
+model PetVisit {
+  id                 String         @id @default(uuid(7)) @db.Uuid
+  organizationId     String         @map("organization_id") @db.Uuid
+  appointmentId      String         @map("appointment_id") @db.Uuid
+  /// Null only while the appointment is HELD for a pet created before OTP (kept in
+  /// the hold's payload); set when the booking is confirmed.
+  petId              String?        @map("pet_id") @db.Uuid
+  status             PetVisitStatus
+  sizeClassAtBooking SizeClass      @map("size_class_at_booking")
+  sizeClassAtCheckin SizeClass?     @map("size_class_at_checkin")
+  weightGAtCheckin   Int?           @map("weight_g_at_checkin")
+  preferredGroomerId String?        @map("preferred_groomer_id") @db.Uuid
+  kennelResourceId   String?        @map("kennel_resource_id") @db.Uuid
+  etaAt              DateTime?      @map("eta_at") @db.Timestamptz(3)
+  etaNotifiedAt      DateTime?      @map("eta_notified_at") @db.Timestamptz(3)
+  readyAt            DateTime?      @map("ready_at") @db.Timestamptz(3)
+  pickedUpAt         DateTime?      @map("picked_up_at") @db.Timestamptz(3)
+  pickedUpByName     String?        @map("picked_up_by_name")
+  priceCentsQuoted   Int            @map("price_cents_quoted")
+  priceCentsFinal    Int?           @map("price_cents_final")
+  reportPublishedAt  DateTime?      @map("report_published_at") @db.Timestamptz(3)
+  createdAt          DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization     Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  appointment      Appointment          @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  pet              Pet?                 @relation(fields: [petId], references: [id], onDelete: Restrict)
+  preferredGroomer StaffUser?           @relation("PetVisitPreferredGroomer", fields: [preferredGroomerId], references: [id], onDelete: SetNull)
+  kennelResource   Resource?            @relation(fields: [kennelResourceId], references: [id], onDelete: Restrict)
+  services         PetVisitService[]
+  segments         AppointmentSegment[]
+  steps            VisitStep[]
+  observations     VisitObservation[]
+  report           VisitReport?
+  media            Media[]
+
+  @@index([organizationId])
+  @@index([appointmentId])
+  @@index([petId])
+  @@index([kennelResourceId])
+  @@index([preferredGroomerId])
+  @@map("pet_visit")
+}
+
+/// Services booked for one pet visit (price and duration snapshots).
+model PetVisitService {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  petVisitId     String   @map("pet_visit_id") @db.Uuid
+  serviceId      String   @map("service_id") @db.Uuid
+  /// Snapshot at booking time.
+  priceCents     Int      @map("price_cents")
+  /// Snapshot at booking time.
+  durationMin    Int      @map("duration_min")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  petVisit     PetVisit     @relation(fields: [petVisitId], references: [id], onDelete: Cascade)
+  service      Service      @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+
+  @@unique([petVisitId, serviceId])
+  @@index([organizationId])
+  @@index([serviceId])
+  @@map("pet_visit_service")
+}
+
+/// Tracking steps of one pet visit, created at check-in (see tracking.md).
+model VisitStep {
+  id                 String     @id @default(uuid(7)) @db.Uuid
+  organizationId     String     @map("organization_id") @db.Uuid
+  petVisitId         String     @map("pet_visit_id") @db.Uuid
+  stage              StepStage
+  sort               Int
+  status             StepStatus @default(PENDING)
+  /// Reason given when status = SKIPPED.
+  skipReason         String?    @map("skip_reason")
+  startedAt          DateTime?  @map("started_at") @db.Timestamptz(3)
+  finishedAt         DateTime?  @map("finished_at") @db.Timestamptz(3)
+  performedByStaffId String?    @map("performed_by_staff_id") @db.Uuid
+  /// The actual actor; differs from performed_by when reception marks a step.
+  recordedByStaffId  String?    @map("recorded_by_staff_id") @db.Uuid
+  /// Idempotency key from the offline queue; unique per organization.
+  clientRef          String?    @map("client_ref")
+  createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  petVisit     PetVisit     @relation(fields: [petVisitId], references: [id], onDelete: Cascade)
+  performedBy  StaffUser?   @relation("VisitStepPerformedBy", fields: [performedByStaffId], references: [id], onDelete: Restrict)
+  recordedBy   StaffUser?   @relation("VisitStepRecordedBy", fields: [recordedByStaffId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, clientRef])
+  @@index([petVisitId, sort])
+  @@index([performedByStaffId])
+  @@index([recordedByStaffId])
+  @@map("visit_step")
+}
+
+model VisitObservation {
+  id                String          @id @default(uuid(7)) @db.Uuid
+  organizationId    String          @map("organization_id") @db.Uuid
+  petVisitId        String          @map("pet_visit_id") @db.Uuid
+  kind              ObservationKind
+  severity          Severity
+  note              String?
+  mediaId           String?         @map("media_id") @db.Uuid
+  recordedByStaffId String          @map("recorded_by_staff_id") @db.Uuid
+  /// Idempotency key from the offline queue; unique per organization.
+  clientRef         String?         @map("client_ref")
+  createdAt         DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  petVisit     PetVisit     @relation(fields: [petVisitId], references: [id], onDelete: Cascade)
+  media        Media?       @relation(fields: [mediaId], references: [id], onDelete: SetNull)
+  recordedBy   StaffUser    @relation(fields: [recordedByStaffId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, clientRef])
+  @@index([petVisitId])
+  @@index([mediaId])
+  @@index([recordedByStaffId])
+  @@map("visit_observation")
+}
+
+/// Report card; one per pet visit.
+model VisitReport {
+  petVisitId      String    @id @map("pet_visit_id") @db.Uuid
+  organizationId  String    @map("organization_id") @db.Uuid
+  summaryNote     String?   @map("summary_note")
+  recommendations String?
+  nextVisitWeeks  Int?      @map("next_visit_weeks")
+  publishedAt     DateTime? @map("published_at") @db.Timestamptz(3)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  petVisit     PetVisit     @relation(fields: [petVisitId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("visit_report")
+}
+
+/// A payment taken outside the system. No card data; nothing is processed.
+model PaymentRecord {
+  id                String        @id @default(uuid(7)) @db.Uuid
+  organizationId    String        @map("organization_id") @db.Uuid
+  appointmentId     String        @map("appointment_id") @db.Uuid
+  amountCents       Int           @map("amount_cents")
+  method            PaymentMethod
+  recordedByStaffId String        @map("recorded_by_staff_id") @db.Uuid
+  recordedAt        DateTime      @default(now()) @map("recorded_at") @db.Timestamptz(3)
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  appointment  Appointment  @relation(fields: [appointmentId], references: [id], onDelete: Restrict)
+  recordedBy   StaffUser    @relation(fields: [recordedByStaffId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId])
+  @@index([appointmentId])
+  @@index([recordedByStaffId])
+  @@map("payment_record")
+}
+
+// ---------------------------------------------------------------- notifications and audit
+
+model NotificationLog {
+  id                String              @id @default(uuid(7)) @db.Uuid
+  organizationId    String              @map("organization_id") @db.Uuid
+  appointmentId     String?             @map("appointment_id") @db.Uuid
+  customerId        String?             @map("customer_id") @db.Uuid
+  templateKey       String              @map("template_key")
+  locale            String
+  channel           NotificationChannel
+  provider          String
+  providerMessageId String?             @map("provider_message_id")
+  status            NotificationStatus
+  error             String?
+  attempts          Int                 @default(0)
+  sentAt            DateTime?           @map("sent_at") @db.Timestamptz(3)
+  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  appointment  Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  customer     Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  @@index([providerMessageId])
+  @@index([appointmentId])
+  @@index([customerId])
+  @@index([organizationId])
+  @@map("notification_log")
+}
+
+/// Append-only; `at` is the event time.
+model AuditLog {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  actorType      ActorType @map("actor_type")
+  /// Null for SYSTEM.
+  actorId        String?   @map("actor_id") @db.Uuid
+  /// e.g. appointment.create, appointment.move, appointment.cancel
+  action         String
+  entity         String
+  /// Text so composite or non-UUID keys can be audited.
+  entityId       String?   @map("entity_id")
+  before         Json?
+  after          Json?
+  ip             String?
+  at             DateTime  @default(now()) @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId, at])
+  @@index([entity, entityId])
+  @@map("audit_log")
+}

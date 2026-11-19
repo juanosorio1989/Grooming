@@ -21,7 +21,7 @@ packages/
   tracking/      NEW pure: step state machine and ETA estimate (used by api, web, mobile)
   i18n/          EN/ES catalogs
   config/        tsconfig, eslint, vitest presets
-docker-compose.yml   postgres 16, redis 7, mailpit, minio (local S3 for photos)
+docker-compose.yml   postgres 16, redis 7, mailpit, SeaweedFS (local S3 API for photos; MinIO images are no longer published)
 ```
 
 Rule from BeautySpa kept: `packages/*` (except `config`) import no DOM,
@@ -36,7 +36,7 @@ spec says otherwise. Record the source commit in `docs/provenance.md`.
 
 | Piece | Notes |
 |---|---|
-| Root tooling, `packages/config`, CI workflows, docker-compose, `.nvmrc` | add minio service |
+| Root tooling, `packages/config`, CI workflows, docker-compose, `.nvmrc` | add SeaweedFS service (local S3) |
 | `packages/datetime`, `packages/contracts` (auth parts), `packages/api-client` | as is |
 | `packages/availability` | then extended (availability.md); drop levels and the parallelizable-service block |
 | `apps/api`: `auth`, `tenancy`, `audit`, `rate-limit`, `redis`, `mail`, `config`, `common`, `health`, `prisma` setup, `cli/create-owner` | `employee_profile.level_id` and `level` table removed |
@@ -64,9 +64,10 @@ card), `media` (presigned uploads/downloads), `realtime` (SSE).
 
 ## Photos and files (`media`)
 
-- Storage: Cloudflare R2 (S3 API) in production, minio locally. One private
-  bucket `pet-media` (photos and vaccine cards), no public access, versioning
-  on.
+- Storage: Cloudflare R2 (S3 API) in production, SeaweedFS locally (local S3
+  API; MinIO images are no longer published). One private bucket `pet-media`
+  (photos and vaccine cards), no public access. Versioning is on for the
+  production R2 bucket only.
 - Upload: client asks `POST /v1/media/uploads` `{ kind, petId|visitId, contentType, bytes }`
   → API checks role/ownership, returns a presigned PUT URL (5 min) and a
   `mediaId`; client uploads, then `POST /v1/media/:id/complete`. API verifies

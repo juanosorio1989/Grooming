@@ -1,5 +1,7 @@
 # Plan 01 — Foundation, Auth and Grooming Schema
 
+> Amended during execution: SeaweedFS replaces minio (MinIO images no longer published).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** A working monorepo built from BeautySpa's proven pieces at commit
@@ -16,7 +18,7 @@ tests. Only then is the BeautySpa schema replaced with the grooming schema
 
 **Tech Stack:** As BeautySpa: Node 22, pnpm 10, Turborepo 2, TypeScript 5 strict,
 Vitest, tsup, date-fns 4 + `@date-fns/tz`, Zod, NestJS 11, `nestjs-zod`,
-Prisma 6, PostgreSQL 16, Redis 7, minio (S3), Docker Compose, GitHub Actions.
+Prisma 6, PostgreSQL 16, Redis 7, SeaweedFS (local S3), Docker Compose, GitHub Actions.
 
 **Spec:** `docs/superpowers/specs/2026-11-18-mvp-design/`. Read `README.md`,
 `architecture.md`, `data-model.md` and `security-quality.md`. BeautySpa's spec
@@ -31,7 +33,7 @@ Main session: Opus 5.5. It orchestrates and does not implement tasks.
 
 | Task | What | Implementer | Reviewer | Why |
 |---|---|---|---|---|
-| 1 | Root tooling, config, Docker (+ minio), CI, project docs | implementer-sonnet | reviewer-opus | mechanical copy and rename; exact values given |
+| 1 | Root tooling, config, Docker (+ SeaweedFS), CI, project docs | implementer-sonnet | reviewer-opus | mechanical copy and rename; exact values given |
 | 2 | Platform packages: `datetime`, `contracts`, `api-client`, availability base | implementer-sonnet | reviewer-opus | copy and rename; copied tests prove it |
 | 3 | API app copy (auth, tenancy, audit, rate-limit, redis, mail, config, common, health, prisma, CLI) on BeautySpa's schema | **implementer-opus** | reviewer-opus | auth/secrets code (Opus rule) |
 | 4 | Grooming Prisma schema, one squashed initial migration with exclusion constraints, minimal seed | **implementer-opus** | reviewer-opus | schema/migration (Opus rule) |
@@ -41,7 +43,7 @@ Main session: Opus 5.5. It orchestrates and does not implement tasks.
 - Node `22` (`.nvmrc`), pnpm `10` (`packageManager`), TypeScript `strict: true`, `noUncheckedIndexedAccess: true`.
 - Rename everywhere: `@beautyspa/*` → `@grooming/*`, root package name `grooming`, cookie/header prefix `bs_` → `gr_` (e.g. `gr_refresh`), JWT `iss`/`aud` `beautyspa` → `grooming`, visible product name `BeautySpa` → `Grooming` (placeholder until the brand is named; TOTP issuer, emails, OpenAPI title).
 - After every task: `git grep -n -i -E 'beautyspa|bs_refresh|\bbs_'` returns nothing, except in `docs/provenance.md` and `docs/superpowers/**`.
-- Local ports must not collide with a running BeautySpa stack: postgres `5433`, redis `6380`, mailpit `1026` (SMTP) / `8026` (UI), minio `9010` (S3) / `9011` (console). Database names `grooming` and `grooming_test`, user/password `grooming` (local only).
+- Local ports must not collide with a running BeautySpa stack: postgres `5433`, redis `6380`, mailpit `1026` (SMTP) / `8026` (UI), SeaweedFS S3 `9010`. Database names `grooming` and `grooming_test`, user/password `grooming` (local only).
 - `packages/*` except `config` import no DOM, Next.js, NestJS or Node-only APIs (copied eslint platform rule and no-DOM typecheck).
 - Money is integer cents (USD). Weights are integer grams. Timestamps UTC; default zone `America/New_York`.
 - Code, comments, docs and commits in English. UI strings EN + ES only.
@@ -66,21 +68,21 @@ Main session: Opus 5.5. It orchestrates and does not implement tasks.
 
 **Interfaces:**
 - Produces: workspace `@grooming/config` (same exports as BeautySpa's: `tsconfig.base.json`, `tsconfig.platform.json`, `tsconfig.node.json`, `eslint.base.mjs`, `eslint.platform.mjs`, `vitest.preset.mjs`). Turbo tasks as copied (`build`, `dev`, `lint`, `typecheck`, `test`, `test:int`).
-- Produces: compose services `postgres`, `redis`, `mailpit`, `minio`, and a one-shot `minio-init` (`minio/mc`) that creates the private bucket `pet-media` with versioning on. Top-level `name: grooming`.
-- Produces: `.env.example` keys as copied (ports and names updated) plus `S3_ENDPOINT=http://localhost:9010`, `S3_REGION=auto`, `S3_BUCKET=pet-media`, `S3_ACCESS_KEY_ID=`, `S3_SECRET_ACCESS_KEY=` (placeholders; minio's local root user/password come from `.env`, read by compose).
+- Produces: compose services `postgres`, `redis`, `mailpit`, `s3` (SeaweedFS), and a one-shot `s3-init` that creates the private bucket `pet-media` (versioning applies to the production R2 bucket only). Top-level `name: grooming`.
+- Produces: `.env.example` keys as copied (ports and names updated) plus `S3_ENDPOINT=http://localhost:9010`, `S3_REGION=auto`, `S3_BUCKET=pet-media`, `S3_ACCESS_KEY_ID=`, `S3_SECRET_ACCESS_KEY=` (placeholders; SeaweedFS's local access key and secret come from `.env`, read by compose).
 
 - [ ] **Step 1: Branch** — `git checkout -b feat/mvp-01-foundation`
 - [ ] **Step 2: Copy** — `git -C ~/Claude/beautySpa/BeautySpa archive 8a778d5 package.json pnpm-workspace.yaml turbo.json .nvmrc .npmrc .gitignore .env.example eslint.config.mjs docker-compose.yml docker .github packages/config apps/mobile | tar -x -C .`
-- [ ] **Step 3: Rename and adjust** per Global Constraints. Change the ports, add minio + minio-init (healthcheck `mc ready local`), and give CI's service containers and env the `grooming` names.
+- [ ] **Step 3: Rename and adjust** per Global Constraints. Change the ports, add `s3` + `s3-init`, and give CI's service containers and env the `grooming` names.
 - [ ] **Step 4: Write docs.**
   - `CLAUDE.md`: what the product is (one paragraph from the spec intent), stack, ports, the copy-from-BeautySpa rule, where the spec and plans live.
   - `docs/provenance.md`: source repo, commit `8a778d5`, a table of copied paths with "as is / renamed / changed".
   - `docs/development/README.md`: setup commands and ports.
   - `docs/README.md`: an index linking these and the spec.
 - [ ] **Step 5: Verify install** — `pnpm install && pnpm turbo run lint typecheck test` · Expected: exit 0.
-- [ ] **Step 6: Verify Docker** — `cp .env.example .env` (fill minio local credentials), `docker compose up -d && docker compose ps --format '{{.Service}} {{.Health}}'` · Expected: postgres, redis, mailpit, minio `healthy`; `minio-init` exited 0. `docker compose exec postgres psql -U grooming -lqt | cut -d'|' -f1 | grep -w grooming_test` prints `grooming_test`. `docker compose run --rm minio-init mc ls local/` lists `pet-media/`.
+- [ ] **Step 6: Verify Docker** — `cp .env.example .env` (fill the local S3 credentials), `docker compose up -d && docker compose ps --format '{{.Service}} {{.Health}}'` · Expected: postgres, redis, mailpit, s3 `healthy`; `s3-init` exited 0. `docker compose exec postgres psql -U grooming -lqt | cut -d'|' -f1 | grep -w grooming_test` prints `grooming_test`. the bucket `pet-media` exists on the local S3 (port 9010).
 - [ ] **Step 7: Verify no leftovers** — the global grep returns nothing.
-- [ ] **Step 8: Commit** — `chore: scaffold monorepo from BeautySpa 8a778d5, minio, CI, docs`
+- [ ] **Step 8: Commit** — `chore: scaffold monorepo from BeautySpa 8a778d5, SeaweedFS, CI, docs`
 
 ---
 
@@ -171,7 +173,7 @@ ALTER TABLE appointment_segment ADD CONSTRAINT no_employee_overlap EXCLUDE USING
   - `person segments still cannot overlap` — same staff, BATH 09:00–10:00 and GROOM 09:30–10:30 → `23P01`.
   - `client_ref is unique per organization` — two `visit_step` rows in org A with `client_ref = 'r1'` → `23505`; one in org B with `'r1'` → succeeds. Repeat for `media`.
   - `one any-coat price row per service and size` — two `service_price` rows `(svc, M, NULL)` → `23505`; `(svc, M, CURLY)` alongside → succeeds.
-- [ ] **Step 2: Run them to verify they fail** — `pnpm --filter @grooming/api test:int -- grooming-constraints` · Expected: FAIL (the tables don't exist yet).
+- [ ] **Step 2: Run them to verify they fail** — `cd apps/api && pnpm exec dotenv -e ../../.env -- vitest run --config vitest.int.config.mts test/integration/grooming-constraints.int.test.ts` (`test:int -- <filter>` does not filter) · Expected: FAIL (the tables don't exist yet).
 - [ ] **Step 3: Write the schema and the single migration.** Delete the old migrations, run `prisma migrate dev --create-only --name init` against an empty database, then append the hand-written SQL.
 - [ ] **Step 4: Update copied code and tests** that referenced levels. The copied auth, tenancy, audit and rate-limit tests must still pass unchanged. Adapt `schema-integrity` and `booking-constraints` to the new model.
 - [ ] **Step 5: Write `seed.ts`.** It creates one organization and one location (`America/New_York`) whose `settings` hold the spec defaults: `defaultBookingMode: "DROP_OFF"`, `maxQueueWaitMin: 90`, `pickupGraceMin: 60`, `sizeThresholdsLb: {S:20,M:50,L:90}`, `requireAfterPhoto: true`, `vaccinePolicy: "WARN"`, `requiredVaccines: {DOG:["RABIES"]}`, `etaNotifyThresholdMin: 30`, `dropOffWindows` Mon–Sat `08:00–11:00`. It also creates resource types tub/table/dryer (`STATION`) and kennel (`KENNEL`) with 3 tubs, 3 tables, 2 dryers and 10 kennels. It must be idempotent. The full catalog and sample data come in Plan 03.

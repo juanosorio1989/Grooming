@@ -1,0 +1,4 @@
+{
+  "extends": "@grooming/config/tsconfig.platform.json",
+  "include": ["src", "*.ts"]
+}

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": [".env"],
+  "globalEnv": ["NODE_ENV"],
+  "tasks": {
+    "build": { "dependsOn": ["^build"], "outputs": ["dist/**"] },
+    "dev": { "dependsOn": ["^build"], "persistent": true, "cache": false, "passThroughEnv": ["DATABASE_URL", "DATABASE_URL_TEST", "REDIS_URL", "WEB_ORIGIN", "PORT"] },
+    "lint": {},
+    "typecheck": { "dependsOn": ["^build"] },
+    "test": { "dependsOn": ["^build"], "passThroughEnv": ["DATABASE_URL", "DATABASE_URL_TEST", "REDIS_URL", "WEB_ORIGIN", "PORT"] },
+    "test:int": { "dependsOn": ["^build"], "cache": false, "passThroughEnv": ["DATABASE_URL", "DATABASE_URL_TEST", "REDIS_URL", "WEB_ORIGIN", "PORT"] }
+  }
+}
