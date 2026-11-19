@@ -1,0 +1,20 @@
+{
+  "name": "grooming",
+  "private": true,
+  "packageManager": "pnpm@10.34.9",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "test:int": "turbo run test:int",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "@grooming/config": "workspace:*",
+    "prettier": "^3.3.0",
+    "turbo": "^2.1.0",
+    "typescript": "^5.6.0"
+  }
+}

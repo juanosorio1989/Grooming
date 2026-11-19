@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo run lint typecheck test build
+
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: grooming
+          POSTGRES_PASSWORD: grooming
+          POSTGRES_DB: grooming
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U grooming"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://grooming:grooming@localhost:5432/grooming
+      DATABASE_URL_TEST: postgresql://grooming:grooming@localhost:5432/grooming_test
+      REDIS_URL: redis://localhost:6379
+      REDIS_URL_TEST: redis://localhost:6379/1
+      WEB_ORIGIN: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Create test database
+        run: psql -h localhost -U grooming -d grooming -c 'CREATE DATABASE grooming_test'
+        env:
+          PGPASSWORD: grooming
+      - run: pnpm turbo run build --filter=@grooming/api...
+      - run: pnpm --filter @grooming/api db:deploy
+      - run: pnpm --filter @grooming/api test:int
+      - run: pnpm --filter @grooming/api db:drift
