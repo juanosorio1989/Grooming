@@ -1,37 +1,17 @@
 # Handoff
 
-Last update: 2026-11-18 · Plan 02 in progress (final-review fix wave pending)
+Last update: 2026-11-20 · Plan 02 merged; next: write Plan 03
 
 ## Done
 
 - Plan 01 merged to `main` (see git history and `docs/provenance.md`).
-- Plan 02 written: `docs/superpowers/plans/2026-11-18-mvp/02-domain-packages.md`.
-- Branch `feat/mvp-02-domain` (not pushed), Tasks 1–6 implemented, each reviewed and clean:
-  - `a3d7308` pricing · `c4e6c23`, `64574d4` tracking steps · `b375b05` tracking ETA
-  - `f4f8da1` availability inputs · `e79e71a` planner (search, `findSlots`) · `948ebdc`, `1f67208` `validatePlan`
-- Final branch review (reviewer-opus) done: **ready with fixes**. Gate green: lint, typecheck, test, build; name-leak grep clean. A fuzz run gave 3054/3054 valid slots.
+- Plan 02 merged to `main`: `pricing`, `tracking` and the grooming `availability` planner
+  (`docs/superpowers/plans/2026-11-18-mvp/02-domain-packages.md`). The final review fix wave
+  (`513b997` kennel backtracking, `aea04fa` skip-ahead clamp) passed a scoped re-review.
 
-## Next: one fix wave, then one scoped re-review, then merge
+## Next
 
-Dispatch one implementer-opus with all of these (Task 5 code), then one reviewer-opus re-review of the fix range (base `1f67208`):
-
-1. **Important.** `packages/availability/src/search.ts` `finishPet` picks the kennel greedily and never backtracks.
-   - Scenario: kennel-A free all day, kennel-B busy from 11:00. Two pets drop off at 09:00.
-   - Pet 1 has a bath only (kennel to 10:55). Pet 2 has a bath plus a 120-min cut (kennel to about 12:55).
-   - Today this returns 0 slots. Expected: at least one slot at 09:00, with pet 1 in kennel-B.
-   - Fix: make the kennel a choice point, trying kennels in name order with backtracking. Symmetry skip is optional. Count each kennel attempt as a node.
-   - Add the scenario as a test. Update the plan's Task 5 "Kennel" rule and the README kennel line to "first feasible kennel by name, backtracking".
-2. Add two search tests:
-   - Station contention: `[batherA, batherB]`, only `tub1`, rex and luna `[bath]` in wait mode → luna's BATH starts at 09:45.
-   - Symmetry must not hide a feasible employee: the first bather in candidate order is busy at `t`, so the second bather is used at `t`.
-3. Availability README: one line on how the node budget is counted. Keep the README ≤ 30 lines.
-4. Tracking `steps.ts`: `latestTimestamp` ignores SKIPPED steps with `startedAt === null`.
-   - Test: SKIP GROOM at m(60), then START BATH at m(50) → BATH `startedAt` is m(50), and `validateSteps` returns null.
-5. Tracking README:
-   - Add a note that `appointmentStatusAfterVisits` may move BOOKED straight to COMPLETED, and that the API writes that status directly.
-   - Trim the README to ≤ 30 lines.
-
-After that: push, open the PR, merge to `main`, mark the plans README row 02 as merged, update this file, and delete `.superpowers/sdd/02-domain-packages/`.
+- Write Plan 03 (catalog, staff, pets API) in detail, using the carry-over below.
 
 ## Carry-over for later plans
 
@@ -60,6 +40,9 @@ After that: push, open the PR, merge to `main`, mark the plans README row 02 as 
   - test the untested step paths (SKIP on DONE/SKIPPED, START on an unknown stage, READY with nothing open);
   - document one `PlannedStage` per stage;
   - `visit_step.client_ref` only deduplicates the latest write; decide whether offline needs a per-write log.
+- Availability hardening (any plan that touches it):
+  - add the kennel-backtrack drop-off input to `validate-plan.test.ts` "accepts every slot";
+  - key the `freeKeys` memo in `search.ts` by map kind (`e:`/`r:`) as well as id.
 
 ## Decisions made during Plan 02 (owner to check)
 
