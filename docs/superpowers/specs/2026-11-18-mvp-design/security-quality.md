@@ -19,6 +19,11 @@ testing levels, Sentry). Additions:
 - Audit additions: step changes made on behalf, timestamp corrections, price
   adjustments, vaccine verifications, report edits, check-in/out, payments.
 - Cloudflare WAF and rate limiting in front of web and API.
+- Owner Google sign-in: ID tokens verified server-side with a single-use,
+  browser-bound nonce; linking only through a verified phone code, never by
+  email match; link notice to the owner; rate limits, audit, CSP and COOP in
+  [owner sign-in: API details](owner-sign-in-api.md). No Turnstile on
+  `/auth/google*`.
 
 ## Privacy
 
@@ -32,7 +37,7 @@ testing levels, Sentry). Additions:
 | Level | Scope |
 |---|---|
 | Unit | `pricing` (size class, matrix lookup), `tracking` (step rules, ETA), availability drop-off and multi-pet |
-| Integration | kennel constraint race; idempotent step writes on `client_ref`; READY without AFTER photo → `AFTER_PHOTO_REQUIRED`; media upload/complete against the local S3 (SeaweedFS); SSE receives a step change |
+| Integration | kennel constraint race; idempotent step writes on `client_ref`; READY without AFTER photo → `AFTER_PHOTO_REQUIRED`; media upload/complete against the local S3 (SeaweedFS); SSE receives a step change; Google sign-in against a fake JWKS (list in [owner sign-in: API details](owner-sign-in-api.md#tests-integration-fake-jwks)) |
 | E2E (Playwright, mobile viewport) | online booking with a new pet (drop-off); check-in → groomer marks steps → owner tracking page updates → ready message (fake provider) → check-out; groomer goes offline, marks two steps, comes back online, steps sync |
 
 ## Seeds

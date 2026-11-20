@@ -19,7 +19,8 @@ sellable**: the live timeline and the photo report card are the demo.
 ## Goals (MVP)
 
 1. Owners book grooming for one or more pets in **≤ 3 steps** (pets + services
-   → time → phone code + confirm). Returning owners have pets prefilled.
+   → time → sign in + confirm). Sign-in is Google (one tap) or phone code;
+   returning owners have pets prefilled. See [owner sign-in](owner-sign-in.md).
 2. Two booking modes, set per location with per-service override:
    **wait** (exact time, owner waits) and **drop-off** (owner picks a drop-off
    time, sees an estimated ready time). See [availability](availability.md).
@@ -46,7 +47,7 @@ sellable**: the live timeline and the photo report card are the demo.
 Online payments, deposits, cancellation fees, tips, packages/memberships,
 loyalty, digital consents, authorized-pickup list, product brand/lot tracking,
 PDF export, waitlist, reviews, recurring "time for a bath" reminders, metrics
-dashboard, native app and push, email/Google/Apple login for owners, pet taxi,
+dashboard, native app and push, email/Apple/passkey login for owners, pet taxi,
 multi-shop onboarding and subscription billing, POS/inventory.
 
 ## Anti-goals (failure even if it "works")
@@ -101,6 +102,7 @@ updates come from the API (SSE + Redis pub/sub), not Supabase Realtime.
 - [Availability](availability.md) — wait and drop-off modes, kennels, multi-pet
 - [Tracking](tracking.md) — step state machine, groomer screen, offline queue, ETA, report card
 - [Flows](flows.md) — booking, check-in/out, day board, notifications
+- [Owner sign-in](owner-sign-in.md) — Google one tap, phone verified once, faster codes ([API details](owner-sign-in-api.md))
 - [API](api.md) — `/v1` endpoints added or changed vs. BeautySpa
 - [Security & quality](security-quality.md) — deltas from BeautySpa, testing
 - [Roadmap](roadmap.md) — phases 2 and 3, scaling, native app
@@ -117,8 +119,10 @@ phone; no pilot and no date yet, so the MVP is aimed at a sellable demo.
 
 Marked inline with **(call)**. Main ones:
 
-- **Owner login is phone + one-time code only** (as in BeautySpa); email,
-  Google and Apple login move to phase 3. Owners never create a password.
+- **Owner sign-in is Google or phone + one-time code**; the phone is verified
+  once per shop, then Google is one tap; customer sessions last 90 days. Email,
+  Apple and passkeys move to phase 3. Owners never create a password. See
+  [owner sign-in](owner-sign-in.md) (updated 2026-11-20 at the owner's request).
 - MVP scope cut (above) and phase split ([roadmap](roadmap.md)).
 - Payments in the MVP are **recorded, not processed** (amount + method at
   check-out).

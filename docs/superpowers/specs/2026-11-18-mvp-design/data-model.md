@@ -15,6 +15,17 @@ in lb.
 `customer` is copied (the pet owner; `name` = owner name) with one addition:
 `emergency_phone_e164` (nullable).
 
+New `customer_identity` (owner sign-in, see [owner sign-in](owner-sign-in.md)):
+`organization_id`, `customer_id`, `provider` (`GOOGLE`), `subject` (Google
+`sub`), `email` (refreshed on each Google sign-in), `created_at`; unique
+`(organization_id, provider, subject)` and `(organization_id, customer_id,
+provider)`; FK `onDelete: Restrict`; rows deleted explicitly on `DELETE /me`.
+
+New `outbox_event`: `id`, `organization_id`, `type`, `payload` jsonb,
+`created_at`, `processed_at` (nullable); written in the same transaction as the
+change, read by workers (first use: the Google link notice); index
+`(processed_at, created_at)`.
+
 ## Changed
 
 | Table | Change |

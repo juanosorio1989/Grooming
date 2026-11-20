@@ -6,7 +6,21 @@ webhooks and RBAC mechanics are copied from BeautySpa's `api.md`. Roles:
 `CUSTOMER` (pet owner).
 
 New error codes: `STEP_CONFLICT`, `STEP_ORDER`, `AFTER_PHOTO_REQUIRED`,
-`VACCINES_REQUIRED`, `NO_PRICE_FOR_PET`, `MEDIA_INVALID`.
+`VACCINES_REQUIRED`, `NO_PRICE_FOR_PET`, `MEDIA_INVALID`, `IDENTITY_TAKEN`.
+
+## Owner sign-in
+
+Contracts, edge cases, limits and audit in
+[owner sign-in: API details](owner-sign-in-api.md).
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/auth/google/nonce` | → `{ nonce }`, browser-bound cookie |
+| POST | `/auth/google` | `{ idToken }` → `SIGNED_IN` (tokens) or `PHONE_REQUIRED` (`linkTicket`) |
+| POST | `/auth/otp/verify` | copied; optional `linkTicket`, response `identityLinked` |
+| POST | `/me/identities/google` | `{ idToken }` links; `409 IDENTITY_TAKEN` |
+| DELETE | `/me/identities/google` | unlinks, `204` |
+| GET | `/me` | copied; adds `identities` |
 
 ## Public
 

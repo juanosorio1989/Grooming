@@ -7,7 +7,7 @@ This page covers what differs.
 ## Online booking (owner, ≤ 3 steps)
 
 ```
-1. Pets & services → 2. Time → 3. Phone code + confirm
+1. Pets & services → 2. Time → 3. Sign in + confirm
 ```
 
 1. **Pets & services.** Returning owner (remembered device or after step 3 of a
@@ -18,15 +18,18 @@ This page covers what differs.
    asked again after booking.
 2. **Time.** Wait mode: slot list. Drop-off mode: drop-off times with
    "ready around X". Tapping one places a hold (countdown).
-3. **Phone + code + confirm.** OTP as BeautySpa; first time also owner name,
-   language and the unticked WhatsApp consent checkbox. Confirm → booked.
+3. **Sign in + confirm.** "Continue with Google" (one tap once the phone is
+   linked) or phone + code as BeautySpa; the first Google sign-in in a shop
+   also asks for the phone code once ([owner sign-in](owner-sign-in.md)).
+   First time also owner name (prefilled from Google when available), language
+   and the unticked WhatsApp consent checkbox. Confirm → booked.
 
 After booking, the success screen asks once to complete pet profiles
 (allergies, temperament, vaccines with card photo, vet). Booking never waits on
 it.
 
-Pets created before OTP are kept in the hold's payload and saved to the
-customer on confirm **(call)**. If the verified phone belongs to a returning
+Pets created before sign-in are kept in the hold's payload and saved to the
+customer on confirm **(call)**. If the signed-in customer is a returning
 owner who already has a pet with the same species and a name matching
 case-insensitively, the confirm screen asks "Is this your Max (Poodle, 42 lb)?"
 Yes → the booking uses the existing pet (its allergies and history); No → a new
