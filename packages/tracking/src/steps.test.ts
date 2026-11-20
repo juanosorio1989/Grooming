@@ -101,6 +101,13 @@ describe("steps", () => {
     expect(validateSteps(e.steps)).toBeNull();
   });
 
+  it("skip-ahead time does not clamp a later start", () => {
+    const a = run(base, { type: "SKIP", stage: "GROOM" }, ctx({ at: m(60) }));
+    const b = run(a.steps, { type: "START", stage: "BATH" }, ctx({ at: m(50) }));
+    expect(get(b.steps, "BATH")).toMatchObject({ status: "IN_PROGRESS", startedAt: m(50) });
+    expect(validateSteps(b.steps)).toBeNull();
+  });
+
   it("ready finishes the open step", () => {
     const a = run(base, { type: "START", stage: "BATH" }, ctx());
     const b = run(a.steps, { type: "START", stage: "GROOM" }, ctx({ at: m(50) }));

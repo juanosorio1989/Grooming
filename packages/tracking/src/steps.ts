@@ -68,6 +68,8 @@ export function visitStatusFromSteps(steps: Step[]): VisitStepStatus {
 function latestTimestamp(steps: Step[]): Ms {
   let latest = -Infinity;
   for (const s of steps) {
+    // A skip-ahead (SKIPPED, never started) has no work interval and does not bound later actions.
+    if (s.status === "SKIPPED" && s.startedAt === null) continue;
     if (s.startedAt !== null) latest = Math.max(latest, s.startedAt);
     if (s.finishedAt !== null) latest = Math.max(latest, s.finishedAt);
   }

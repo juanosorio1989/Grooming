@@ -4,24 +4,20 @@ Pure helpers for visit/appointment statuses and the grooming step state machine.
 
 ## Exports
 
-- Types: `Ms`, `WorkStage`, `StepStage`, `StepStatus`, `Step`, `PetVisitStatus`, `AppointmentStatus`, `StepAction`, `StepContext`, `TrackingErrorCode`
-- `WORK_STAGE_ORDER` (`BATH → DRY → GROOM → FINISH`)
-- `canTransitionVisit`, `canTransitionAppointment`, `appointmentStatusAfterVisits`
-- `buildInitialSteps`, `visitStatusFromSteps`, `applyStepAction` (pure, never mutates), `validateSteps`
+- Types: `Ms`, `WorkStage`, `StepStage`, `StepStatus`, `Step`, `PetVisitStatus`, `AppointmentStatus`, `StepAction`, `StepContext`, `TrackingErrorCode`; `WORK_STAGE_ORDER` (`BATH → DRY → GROOM → FINISH`)
+- `canTransitionVisit`, `canTransitionAppointment`, `appointmentStatusAfterVisits`; `buildInitialSteps`, `visitStatusFromSteps`, `applyStepAction` (pure, never mutates), `validateSteps`
 - `estimateReady`, `ownerPageEtaChanged`, `shouldNotifyEtaChange`, `PlannedStage`, `IN_PROGRESS_MIN_REMAINING_MIN` (5), `OWNER_PAGE_ETA_STEP_MIN` (5), `ETA_NOTIFY_MIN_INTERVAL_MIN` (60)
 - `effectiveOccurredAt`, `OCCURRED_AT_MAX_AGE_MS` (12 h), `OCCURRED_AT_MAX_SKEW_MS` (2 min)
 
+`appointmentStatusAfterVisits` may move BOOKED straight to COMPLETED (BOOKED → IN_SHOP → COMPLETED in one call); the API writes the returned status directly (not through `canTransitionAppointment`).
+
 ## Action rules
 
-- All actions: RECEIVED must be DONE and READY not DONE, else `STEP_CONFLICT`; `at` is clamped to the latest timestamp already recorded.
+- All actions: RECEIVED must be DONE and READY not DONE, else `STEP_CONFLICT`; `at` is clamped to the latest timestamp already recorded (skip-aheads, SKIPPED with no `startedAt`, are ignored).
 - START: target must be PENDING; an earlier PENDING work step gives `STEP_ORDER`; the open step becomes DONE.
 - SKIP: target PENDING or IN_PROGRESS becomes SKIPPED; order is not enforced.
 - READY: closes the open step; a PENDING work step gives `STEP_ORDER`; a missing required after photo gives `AFTER_PHOTO_REQUIRED`.
-
-## Error codes
-
-`STEP_CONFLICT`, `STEP_ORDER` and `AFTER_PHOTO_REQUIRED` map to API codes of the same name.
-`INVALID_TIMELINE` maps to 422 on reception corrections.
+- Error codes: `STEP_CONFLICT`, `STEP_ORDER`, `AFTER_PHOTO_REQUIRED` map to API codes of the same name; `INVALID_TIMELINE` maps to 422 on reception corrections.
 
 ## ETA
 
