@@ -23,7 +23,8 @@ provider)`; FK `onDelete: Restrict`; rows deleted explicitly on `DELETE /me`.
 
 New `outbox_event`: `id`, `organization_id`, `type`, `payload` jsonb,
 `created_at`, `processed_at` (nullable); written in the same transaction as the
-change, read by workers (first use: the Google link notice).
+change, read by workers (first use: the Google link notice); index
+`(processed_at, created_at)`.
 
 ## Changed
 

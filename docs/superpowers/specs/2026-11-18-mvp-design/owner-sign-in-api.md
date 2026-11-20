@@ -38,15 +38,15 @@ When `GOOGLE_OAUTH_CLIENT_IDS` is empty, `/auth/google*` and
 The nonce and the ticket are bearer values, so each is also bound to the
 browser that asked for it: the API sets a cookie (10 min) holding a random
 binding value, stores it with the nonce/ticket in Redis, and accepts the
-nonce/ticket only from a request that carries the same cookie. Cookie options
+nonce/ticket only from a request that carries the same cookie. This stops an
+attacker from slipping their own ticket into a victim's code verify. Cookie options
 are those of `gr_refresh` (HttpOnly, `COOKIE_SECURE`, `COOKIE_DOMAIN`) except
 `sameSite: "strict"`. Paths: `gr_gnonce` on `/v1` (read by `/auth/google` and
 `/me/identities/google`), `gr_glink` on `/v1/auth` (read by
 `/auth/otp/verify`). The web calls these endpoints with `credentials:
 "include"`, as it does for refresh. One `gr_gnonce` per browser: a newer nonce
 (another tab, or a refetch after 10 min) replaces the older one, so on a `401`
-from `/auth/google` the web fetches a fresh nonce and re-prompts once. This stops an attacker from slipping their own ticket
-into a victim's code verify. The web keeps the ticket in memory only (never in
+from `/auth/google` the web fetches a fresh nonce and re-prompts once. The web keeps the ticket in memory only (never in
 a URL or browser storage). Native clients (later) send the binding value in a
 header instead of the cookie.
 
@@ -67,10 +67,14 @@ today.
 ## Link notice (split across plans)
 
 Plan 04 writes an outbox row in the linking transaction (`outbox_event`, type
-`customer.identity_linked`, payload `{ customerId, email }`). Plan 06 adds the
-worker that reads it and sends the notice through the notification router (EN/ES
-WhatsApp template + email, channel rules in [owner sign-in](owner-sign-in.md)).
-Until Plan 06 lands, rows just accumulate.
+`customer.identity_linked`, payload `{ customerId, googleEmail, notifyEmail }`).
+`notifyEmail` is `customer.email` read **before** the link sets it (null when
+it was empty), so the notice never goes to the address of whoever linked.
+Plan 06 adds the worker that reads the row and sends the notice through the
+notification router: email only to `notifyEmail`, WhatsApp only if consent is
+on when it sends, `googleEmail` only in the message body (EN/ES; rules in
+[owner sign-in](owner-sign-in.md)). Until Plan 06 lands, rows accumulate;
+`DELETE /me` deletes that customer's unprocessed rows (they hold an email).
 
 ## Identity rows
 
@@ -119,4 +123,6 @@ links; every row of the ticket table; email match never links; deleted
 customer → 401; `409 IDENTITY_TAKEN` both cases with identical bodies; feature
 off → 404 and `linkTicket` ignored; `DELETE /me` removes identities; Profile
 link with the nonce cookie succeeds and without it → 401; a link records an
-`identity_linked` outbox row.
+`identity_linked` outbox row; a link for a customer with no prior email has
+`notifyEmail: null`; `DELETE /me` removes the customer's unprocessed outbox
+rows.
