@@ -6,7 +6,20 @@ webhooks and RBAC mechanics are copied from BeautySpa's `api.md`. Roles:
 `CUSTOMER` (pet owner).
 
 New error codes: `STEP_CONFLICT`, `STEP_ORDER`, `AFTER_PHOTO_REQUIRED`,
-`VACCINES_REQUIRED`, `NO_PRICE_FOR_PET`, `MEDIA_INVALID`.
+`VACCINES_REQUIRED`, `NO_PRICE_FOR_PET`, `MEDIA_INVALID`, `IDENTITY_TAKEN`.
+
+## Owner sign-in
+
+Details in [owner sign-in](owner-sign-in.md). All return `404` when
+`GOOGLE_OAUTH_CLIENT_ID` is empty.
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/auth/google/nonce` | → `{ nonce }` (Redis, 10 min, single-use) |
+| POST | `/auth/google` | `{ idToken }` → customer tokens, or `{ status: "PHONE_REQUIRED", linkTicket, givenName? }` |
+| POST | `/auth/otp/verify` | copied; adds optional `linkTicket` and `identityLinked` in the response |
+| POST | `/me/identities/google` | `{ idToken }` links Google; `409 IDENTITY_TAKEN` if another is linked |
+| DELETE | `/me/identities/google` | unlinks |
 
 ## Public
 

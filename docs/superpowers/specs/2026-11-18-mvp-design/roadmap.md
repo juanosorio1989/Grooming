@@ -13,7 +13,9 @@ freed slots via BullMQ); reviews per visit and per groomer; SMS on after 10DLC.
 Packages and memberships; loyalty; tips (Stripe); recurring "time for a bath
 every N weeks" reminders from `next_visit_weeks`; admin dashboard (day load per
 person, revenue, top services, inactive clients, no-shows); pet taxi;
-email/Google/Apple login for owners.
+email/Apple login and passkeys for owners (Google is in the MVP). Sign in
+with Apple becomes required when the native iOS app offers Google sign-in
+(App Store rule).
 
 Native app (Expo): `apps/mobile` with Expo Router; reuse `contracts`,
 `api-client` (SecureStore `TokenStore`), `availability`, `pricing`, `tracking`,

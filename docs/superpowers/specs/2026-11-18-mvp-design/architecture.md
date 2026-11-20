@@ -81,7 +81,9 @@ card), `media` (presigned uploads/downloads), `realtime` (SSE).
 ## Authentication
 
 As BeautySpa (approach B, in-house tokens):
-- Owner (customer): phone + OTP via Twilio Verify (WhatsApp, SMS fallback).
+- Owner (customer): Google sign-in or phone + OTP via Twilio Verify (WhatsApp,
+  SMS fallback); the phone is verified once per shop; refresh lifetime 90 days.
+  See [owner sign-in](owner-sign-in.md).
 - Staff: email + password + mandatory TOTP; staff refresh lifetime 12 h (one
   shift), so a groomer logs in once per shift on their phone.
 - Staff who never log in (`can_login = false`) still get schedules; a groomer

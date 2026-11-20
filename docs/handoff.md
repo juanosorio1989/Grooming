@@ -1,6 +1,6 @@
 # Handoff
 
-Last update: 2026-11-20 · Plan 02 merged; next: write Plan 03
+Last update: 2026-11-20 · Plan 02 merged; owner Google sign-in added to spec; next: write Plan 03
 
 ## Done
 
@@ -12,6 +12,13 @@ Last update: 2026-11-20 · Plan 02 merged; next: write Plan 03
 ## Next
 
 - Write Plan 03 (catalog, staff, pets API) in detail, using the carry-over below.
+
+## Spec change 2026-11-20
+
+- Owner sign-in: Google (one tap) or phone code; phone verified once per shop;
+  customer refresh 90 days. Spec page `docs/superpowers/specs/2026-11-18-mvp-design/owner-sign-in.md`.
+  API goes in Plan 04, web in Plan 07. The owner must create the Google OAuth
+  client (Cloud Console) before Plan 07 can be tried for real.
 
 ## Carry-over for later plans
 
