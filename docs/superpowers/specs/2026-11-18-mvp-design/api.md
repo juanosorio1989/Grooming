@@ -10,16 +10,17 @@ New error codes: `STEP_CONFLICT`, `STEP_ORDER`, `AFTER_PHOTO_REQUIRED`,
 
 ## Owner sign-in
 
-Details in [owner sign-in](owner-sign-in.md). All return `404` when
-`GOOGLE_OAUTH_CLIENT_ID` is empty.
+Contracts, edge cases, limits and audit in
+[owner sign-in: API details](owner-sign-in-api.md).
 
 | Method | Path | Notes |
 |---|---|---|
-| POST | `/auth/google/nonce` | → `{ nonce }` (Redis, 10 min, single-use) |
-| POST | `/auth/google` | `{ idToken }` → customer tokens, or `{ status: "PHONE_REQUIRED", linkTicket, givenName? }` |
-| POST | `/auth/otp/verify` | copied; adds optional `linkTicket` and `identityLinked` in the response |
-| POST | `/me/identities/google` | `{ idToken }` links Google; `409 IDENTITY_TAKEN` if another is linked |
-| DELETE | `/me/identities/google` | unlinks |
+| POST | `/auth/google/nonce` | → `{ nonce }`, browser-bound cookie |
+| POST | `/auth/google` | `{ idToken }` → `SIGNED_IN` (tokens) or `PHONE_REQUIRED` (`linkTicket`) |
+| POST | `/auth/otp/verify` | copied; optional `linkTicket`, response `identityLinked` |
+| POST | `/me/identities/google` | `{ idToken }` links; `409 IDENTITY_TAKEN` |
+| DELETE | `/me/identities/google` | unlinks, `204` |
+| GET | `/me` | copied; adds `identities` |
 
 ## Public
 

@@ -19,11 +19,11 @@ testing levels, Sentry). Additions:
 - Audit additions: step changes made on behalf, timestamp corrections, price
   adjustments, vaccine verifications, report edits, check-in/out, payments.
 - Cloudflare WAF and rate limiting in front of web and API.
-- Google ID tokens verified server-side (signature, `aud`, `iss`, expiry,
-  `email_verified`, single-use nonce); an account links only through a
-  verified phone code, never by email match; link/unlink audited. Rate limit
-  `/auth/google*` like `/auth/otp/*`. CSP allows `https://accounts.google.com`
-  on owner pages ([owner sign-in](owner-sign-in.md)).
+- Owner Google sign-in: ID tokens verified server-side with a single-use,
+  browser-bound nonce; linking only through a verified phone code, never by
+  email match; link notice to the owner; rate limits, audit, CSP and COOP in
+  [owner sign-in: API details](owner-sign-in-api.md). No Turnstile on
+  `/auth/google*`.
 
 ## Privacy
 
@@ -37,7 +37,7 @@ testing levels, Sentry). Additions:
 | Level | Scope |
 |---|---|
 | Unit | `pricing` (size class, matrix lookup), `tracking` (step rules, ETA), availability drop-off and multi-pet |
-| Integration | kennel constraint race; idempotent step writes on `client_ref`; READY without AFTER photo → `AFTER_PHOTO_REQUIRED`; media upload/complete against the local S3 (SeaweedFS); SSE receives a step change; Google sign-in against a fake JWKS (bad `aud`/nonce/unverified email → 401, unknown `sub` → `PHONE_REQUIRED`, ticket + code links, ticket reuse fails, email match never links) |
+| Integration | kennel constraint race; idempotent step writes on `client_ref`; READY without AFTER photo → `AFTER_PHOTO_REQUIRED`; media upload/complete against the local S3 (SeaweedFS); SSE receives a step change; Google sign-in against a fake JWKS (list in [owner sign-in: API details](owner-sign-in-api.md#tests-integration-fake-jwks)) |
 | E2E (Playwright, mobile viewport) | online booking with a new pet (drop-off); check-in → groomer marks steps → owner tracking page updates → ready message (fake provider) → check-out; groomer goes offline, marks two steps, comes back online, steps sync |
 
 ## Seeds

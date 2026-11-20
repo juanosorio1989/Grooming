@@ -102,7 +102,7 @@ updates come from the API (SSE + Redis pub/sub), not Supabase Realtime.
 - [Availability](availability.md) — wait and drop-off modes, kennels, multi-pet
 - [Tracking](tracking.md) — step state machine, groomer screen, offline queue, ETA, report card
 - [Flows](flows.md) — booking, check-in/out, day board, notifications
-- [Owner sign-in](owner-sign-in.md) — Google one tap, phone verified once, faster codes
+- [Owner sign-in](owner-sign-in.md) — Google one tap, phone verified once, faster codes ([API details](owner-sign-in-api.md))
 - [API](api.md) — `/v1` endpoints added or changed vs. BeautySpa
 - [Security & quality](security-quality.md) — deltas from BeautySpa, testing
 - [Roadmap](roadmap.md) — phases 2 and 3, scaling, native app

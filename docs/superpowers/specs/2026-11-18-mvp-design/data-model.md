@@ -17,9 +17,9 @@ in lb.
 
 New `customer_identity` (owner sign-in, see [owner sign-in](owner-sign-in.md)):
 `organization_id`, `customer_id`, `provider` (`GOOGLE`), `subject` (Google
-`sub`), `email`, `created_at`; unique `(organization_id, provider, subject)`
-and `(organization_id, customer_id, provider)`; rows deleted with the customer
-on `DELETE /me`.
+`sub`), `email` (refreshed on each Google sign-in), `created_at`; unique
+`(organization_id, provider, subject)` and `(organization_id, customer_id,
+provider)`; FK `onDelete: Restrict`; rows deleted explicitly on `DELETE /me`.
 
 ## Changed
 

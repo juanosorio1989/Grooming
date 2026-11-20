@@ -3,7 +3,8 @@
 Added 2026-11-20. Replaces the earlier designer call "owner login is phone +
 code only; Google in phase 3". The owner asked for Google (Gmail) sign-in for
 pet owners and faster sign-in in general, and left the design to the designer.
-Everything below is a **(call)** unless it says otherwise.
+Everything below is a **(call)** unless it says otherwise. Endpoint contracts,
+edge cases and limits are in [owner sign-in: API details](owner-sign-in-api.md).
 
 ## Intent
 
@@ -34,7 +35,8 @@ Apple, email (magic link or password) and passkeys. See the
 - Two `customer` rows for one person: one from Google, one from the phone.
 - WhatsApp messages sent to a number the owner never proved is theirs.
 - Someone takes over another owner's pets and history by typing that owner's
-  phone number, or by using an email that matches theirs.
+  phone number, by using an email that matches theirs, or by getting a Google
+  account linked to it without the owner knowing.
 
 ## Approaches
 
@@ -46,58 +48,45 @@ Apple, email (magic link or password) and passkeys. See the
 
 ## How it works
 
-### Google sign-in
-
 1. The web loads Google Identity Services (button + One Tap) with the
    platform's OAuth **client ID** (public; no client secret is used).
-2. Before showing the button, the web gets a nonce:
-   `POST /v1/auth/google/nonce` → `{ nonce }`. The nonce is random, stored in
-   Redis for 10 min and single-use.
-3. Google returns an ID token. The web sends `POST /v1/auth/google`
-   `{ idToken }`.
-4. The API verifies the token with `google-auth-library`: signature, `aud` =
-   client ID, `iss`, expiry, `email_verified = true`, and a `nonce` that it then
-   consumes. Any failure → `401 UNAUTHORIZED`.
-5. The API looks up `customer_identity` by `(organization_id, GOOGLE, sub)`:
-   - **Found** (and the customer is not deleted): it issues customer tokens
-     exactly like an OTP verify does (access token + refresh cookie). Done.
-   - **Not found**: it returns `200 { status: "PHONE_REQUIRED", linkTicket,
-     givenName? }`. `linkTicket` is random, stored in Redis for 10 min with
-     `{ orgId, sub, email, givenName }`, and single-use.
-6. The web asks for the phone and runs the normal code flow, passing the
-   ticket: `POST /v1/auth/otp/start` (unchanged, Turnstile still applies), then
-   `POST /v1/auth/otp/verify { phone, code, linkTicket? }`.
-7. On a valid code with a valid ticket, in one transaction the API finds or
-   creates the `customer` for that phone (as today), creates the
-   `customer_identity` row, sets `customer.email` from Google only if it is
-   empty, and writes an audit row `customer.identity_link`. On booking step 3,
-   the owner name field is prefilled from `givenName` when `customer.name` is
-   empty.
-
-The ticket is consumed even if linking fails, and only one Google account can
-be linked per customer (see below), so a stolen ticket is worth one attempt for
-10 minutes and still needs the phone's code.
+2. Before showing the button, the web gets a nonce from the API
+   (`POST /auth/google/nonce`). The nonce is single-use, lives 10 min, and is
+   bound to this browser by a short-lived HttpOnly cookie.
+3. Google returns an ID token; the web sends it to `POST /auth/google`. The API
+   verifies it (signature, audience, issuer, expiry, `email_verified`, nonce).
+4. The API looks up `customer_identity` by `(organization_id, GOOGLE, sub)`:
+   - **Found**: the owner is signed in exactly as after a phone code (access
+     token + refresh cookie). Done: one tap.
+   - **Not found**: the response says `PHONE_REQUIRED` and carries a
+     single-use `linkTicket` (10 min, also cookie-bound) and the Google name.
+5. The web asks for the phone and runs the normal code flow, sending the ticket
+   with the code (`POST /auth/otp/verify`).
+6. On a valid code, the owner is signed in as today (the `customer` for that
+   phone is found or created) and the Google account is linked to it. The owner
+   name is prefilled from Google when `customer.name` is empty. The owner gets
+   a notice that a Google account was linked (below).
 
 ### Rules
 
-- Linking happens **only** through a verified phone code. An email match never
-  links or signs in anyone: `customer.email` is typed by the owner and nobody
-  verified it.
+- Linking happens **only** through a verified phone code (or, from Profile,
+  while signed in). An email match never links or signs in anyone:
+  `customer.email` is typed by the owner and nobody verified it.
 - One Google account per customer, and one customer per Google account in each
-  shop: unique `(organization_id, provider, subject)` and unique
-  `(organization_id, customer_id, provider)`. If the customer already has a
-  different Google account linked, the code still counts: verify signs them in
-  by phone as usual and its response carries `identityLinked: false` (otherwise
-  `true` when a ticket was sent), and the web says the other Google account
-  stays linked. `POST /me/identities/google` in the same case returns
-  `409 IDENTITY_TAKEN`.
-- An owner signed in by phone can link Google from Profile:
-  `POST /v1/me/identities/google { idToken }` (same verification, no ticket).
-  `DELETE /v1/me/identities/google` unlinks it. Both are audited.
-- `DELETE /me` deletes the customer's identity rows. Export lists the linked
-  provider and email.
+  shop.
 - Each shop is a separate organization, so the same Google account signs in to
   each shop separately, and the first time in each shop needs a code.
+- Profile shows the linked Google email and lets the owner link (while signed
+  in) or unlink it.
+- **Link notice:** on every link, the owner gets a WhatsApp message (when
+  WhatsApp consent is on) and an email to `customer.email` (when it was set
+  before this link), in their language: "Google account x@gmail.com was linked
+  to your account. Not you? Open your profile to unlink it." It is a security
+  message about their own account, so it goes out even without marketing
+  consent, but only on channels they opted into. This limits phone-code
+  phishing ("read me the code we sent you") and recycled phone numbers.
+- `DELETE /me` removes the identity rows; export lists the linked provider and
+  email.
 
 ### Faster in general
 
@@ -105,39 +94,49 @@ be linked per customer (see below), so a stolen ticket is worth one attempt for
   sign-in, rotated on every refresh; `REFRESH_TTL_MS.CUSTOMER`). Staff stays
   12 h.
 - Code input: `inputmode="numeric"`, `autocomplete="one-time-code"` (iOS
-  offers the code from SMS). SMS fallback messages end with the WebOTP line
-  (`@<web host> #<code>`) when Twilio Verify allows a custom SMS template, so
-  Android Chrome can fill the code. WhatsApp codes use Twilio Verify's own
-  template, including its copy-code button.
+  offers the code from SMS).
+- Android SMS autofill (WebOTP) is **Twilio Verify console configuration done
+  by the owner**, not code: a custom SMS template whose last line is
+  `@<web host> #<code>`, with the host exactly equal to the web origin's host
+  (Twilio may need to approve the template). WhatsApp codes use Twilio Verify's
+  own template with its copy-code button.
 - Unchanged: signed WhatsApp/email links open tracking and "manage booking"
   without signing in.
 
-### Configuration
+## Configuration
 
-- `GOOGLE_OAUTH_CLIENT_ID` (API and web). When it is empty, the feature is off:
-  the button is hidden and `/auth/google*` and `/me/identities/google` return
-  `404`. Local dev and tests run with it empty, except the tests that set it.
-- The OAuth client is created in Google Cloud Console by the owner (it is a
-  cloud resource; never created by an agent). Authorized JavaScript origins:
-  the web origins (local `http://localhost:3000`, then production).
-- CSP adds `https://accounts.google.com` (script, frame, connect) on the
-  owner pages.
+- API: `GOOGLE_OAUTH_CLIENT_IDS` (comma-separated, optional; empty means off) in
+  `apps/api/src/config/env.ts` and `.env.example`. A list, because the native
+  apps later get their own iOS and Android client IDs and `aud` must accept
+  each. Web: `NEXT_PUBLIC_GOOGLE_OAUTH_CLIENT_ID` (the web client ID; empty
+  hides the button).
+- Off means: no button, and the Google endpoints return `404`. Local dev and
+  tests run with it empty, except the tests that set it.
+- The OAuth client and its consent screen are created in Google Cloud Console
+  **by the owner** (a cloud resource; never created by an agent). The consent
+  screen needs an app name, a support email and a privacy-policy URL; the
+  privacy notice must say the Google email is stored. Authorized JavaScript
+  origins: `http://localhost:3000`, then production.
 - Many shops later: Google needs every origin listed. When shops get their own
   subdomains, either list each origin when a shop is onboarded or move sign-in
-  to one shared auth origin. This is decided in the multi-shop phase.
+  to one shared auth origin. Decided in the multi-shop phase.
 
 ## Where it is built
 
-- **API (Plan 04, booking):** `customer_identity` table and migration,
-  `/auth/google/nonce`, `/auth/google`, `linkTicket` on OTP verify,
-  `/me/identities/google`, 90-day customer refresh, export/delete. Tests use a
-  local RSA key and a fake JWKS in place of Google's.
+- **API (Plan 04, booking):** `customer_identity` table and migration, the
+  endpoints and contracts in [API details](owner-sign-in-api.md), 90-day
+  customer refresh, link notice job, export/delete. Tests use a local RSA key
+  and a fake JWKS in place of Google's.
 - **Web (Plan 07, owner):** Google button and One Tap on step 3 and on the
   owner-area sign-in, the `PHONE_REQUIRED` path, name prefill, code input
-  autofill, Profile link/unlink.
+  autofill, Profile link/unlink. On logout the web calls
+  `google.accounts.id.disableAutoSelect()`, so One Tap does not sign the owner
+  straight back in on a shared device.
+- **Templates (Plan 06):** the link notice in EN/ES (WhatsApp template +
+  email).
 
 ## Left to the builder
 
 Button placement and copy within the mockups' style (Google's brand rules apply
-to the button), the One Tap trigger rules (for example, not on top of the
+to the button), the One Tap trigger rules (for example, not on top of the hold
 countdown), and error wording in EN/ES.
