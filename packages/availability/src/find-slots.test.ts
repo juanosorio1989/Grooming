@@ -8,7 +8,7 @@ import { planWait } from "./search";
 import type { BusySegment, PetRequest, PlannedSegment, ServiceInput, Slot } from "./types";
 import {
   at, bath, batherA, batherB, dry, everyDay, groomCtx, groomerA, groomerB, haircut, kennel1,
-  KENNEL_1_ID, KENNEL_2_ID, luna, makeEmployee, makeLocation, max, MON, nails, NY, pet, rex,
+  KENNEL_1_ID, KENNEL_2_ID, luna, makeEmployee, makeLocation, max, MON, nails, NY, pet, prices, rex,
   services, table1, TABLE, TABLE_1_ID, tub1, tub2, TUB_1_ID, TUB_2_ID, dryer1, table2,
 } from "../test/fixtures";
 
@@ -230,6 +230,25 @@ describe("findSlots: wait mode", () => {
     expect(slots[0]!.start).toBe(m("00:00"));
   });
 
+  it("station contention: one tub, two bathers", () => {
+    const slots = findSlots(
+      groomCtx({ employees: [batherA, batherB], resources: [tub1], pets: [pet(rex, [bath.id]), pet(luna, [bath.id])] }),
+    );
+    const first = firstAt(slots, "09:00");
+    expect(span(seg(first, "BATH", 0))).toEqual([m("09:00"), m("09:45")]);
+    expect(seg(first, "BATH", 1).start).toBe(m("09:45"));
+    expect(seg(first, "BATH", 1).resourceId).toBe(TUB_1_ID);
+  });
+
+  it("symmetry does not hide a feasible employee", () => {
+    const off = makeEmployee(batherA, { timeOff: [{ start: m("09:00"), end: m("09:45") }] });
+    const ctx = groomCtx({ employees: [off, batherB], pets: [pet(rex, [bath.id])] });
+    const p = prepare(ctx, MON);
+    expect(resolvePets(p, ctx.pets)[0]!.segments[0]!.candidates.map((e) => e.id)).toEqual([batherA.id, batherB.id]);
+    const s = firstAt(findSlots(ctx), "09:00");
+    expect(seg(s, "BATH")).toMatchObject({ start: m("09:00"), employeeId: batherB.id });
+  });
+
   it("DST day", () => {
     const slots = findSlots(
       groomCtx({ date: "2026-03-08", now: Date.parse("2026-03-01T12:00:00Z"), pets: [pet(rex, [bath.id])] }),
@@ -319,6 +338,24 @@ describe("findSlots: drop-off mode", () => {
 
   it("one kennel, two pets", () => {
     expect(dropOff({ resources: noKennel2, pets: [pet(rex, [bath.id]), pet(luna, [bath.id])] })).toEqual([]);
+  });
+
+  it("kennel choice backtracks", () => {
+    const day = allDay();
+    const longCut = prices.map((r) =>
+      r.serviceId === haircut.id && r.sizeClass === "M" ? { ...r, durationMin: 120 } : r,
+    );
+    const slots = dropOff({
+      prices: longCut,
+      busy: [kennelBusy(KENNEL_2_ID, m("11:00"), day.end)],
+      pets: [pet(rex, [bath.id]), pet(luna, [bath.id, haircut.id])],
+    });
+    const s = firstAt(slots, "09:00");
+    expect(s).toBeDefined();
+    expect(span(seg(s, "KENNEL", 0))).toEqual([m("09:00"), m("10:55")]);
+    expect(seg(s, "KENNEL", 0).resourceId).toBe(KENNEL_2_ID);
+    expect(span(seg(s, "KENNEL", 1))).toEqual([m("09:00"), m("12:55")]);
+    expect(seg(s, "KENNEL", 1).resourceId).toBe(KENNEL_1_ID);
   });
 
   it("pickup grace boundary", () => {

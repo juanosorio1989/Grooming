@@ -1,8 +1,7 @@
 # @grooming/availability
 
 Pure slot-search domain logic for grooming visits (no DOM, Node or framework APIs). Time is UTC epoch ms,
-intervals are half-open `[start, end)`. `findSlots` lists bookable slots for one local date; `validatePlan`
-re-checks one exact slot.
+intervals are half-open `[start, end)`. `findSlots` lists bookable slots for one local date; `validatePlan` re-checks one exact slot.
 Input: `FindSlotsInput` = `Context` (location, services, prices, employees, resources, busy, `mode` ONLINE|STAFF,
 `now`, `override`) + `SlotRequest` (`bookingMode` WAIT|DROP_OFF, `pets` max 4, 6 services each) + `date`.
 Kennel busy rows have `employeeId: null`. Output: `Slot { start, readyAt, bookingMode, pets: PetPlan[] }`, each
@@ -14,8 +13,9 @@ Kennel busy rows have `employeeId: null`. Output: `Slot { start, readyAt, bookin
 - Lower bounds: wait `t`; drop-off `d + DROP_OFF_INTAKE_MIN` (10); otherwise the previous segment's end.
 - Idle: wait, gap within a pet ≤ `WAIT_MAX_GAP_MIN` (15); drop-off, initial wait + gaps per pet ≤ `maxQueueWaitMin`.
 - Rule B (`blockEndFor`): `blockEnd = end + buffer`, unless the same employee starts the pet's next segment at `end` and the station is kept (or none).
-- Kennel (drop-off): first kennel by name free over `[d, lastEnd + pickupGraceMin)`, one per pet, as a `KENNEL` segment.
+- Kennel (drop-off): first feasible kennel by name, backtracking; free over `[d, lastEnd + pickupGraceMin)`, one per pet, as a `KENNEL` segment.
 - Budget `MAX_NODES_PER_START` (5000) per start; beyond it no slot. Drop-off times: grid times inside `dropOffWindows`, except STAFF + override.
+- Node count: one per (employee, station-or-none) attempt whose employee passed the free/clash check, plus one per kennel attempt; symmetric (skipped) candidates cost nothing.
 ## validatePlan (`validate-plan.ts`)
 
 `validatePlan(input: Context & SlotRequest, slot)` returns `{ ok: true }` or `{ ok: false, reason }`; it does not

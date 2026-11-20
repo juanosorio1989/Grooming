@@ -138,22 +138,35 @@ function search(p: Prepared, specs: PetSpec[], base: Ms, mode: SearchMode, maxNo
     last.blockEnd = lastBlock;
     if (mode === "DROP_OFF") {
       const range = { start: base, end: last.end + ctx.location.pickupGraceMin * MINUTE };
-      const kennel = kennels.find((k) => covers(resourceFree(k.id), range) && !clashes(null, k.id, range));
-      if (kennel === undefined) return false;
-      plan.push({
-        petId: last.petId,
-        stage: "KENNEL",
-        serviceIds: [],
-        employeeId: null,
-        resourceId: kennel.id,
-        start: range.start,
-        end: range.end,
-        blockEnd: range.end,
-        durationMin: (range.end - range.start) / MINUTE,
-        priceCents: 0,
-      });
-      if (placePet(pi + 1)) return true;
-      plan.pop();
+      // Kennel is a choice point: try kennels by name, backtrack into the next one if later pets fail.
+      // Unused kennels with identical free time are interchangeable, so only the first is tried.
+      const seenK = new Set<string>();
+      for (const kennel of kennels) {
+        const kKey = kennelUsed(kennel.id) ? `id:${kennel.id}` : freeKey(p.resourceFree, kennel.id);
+        if (seenK.has(kKey)) continue;
+        seenK.add(kKey);
+        if (++nodes > maxNodes) {
+          aborted = true;
+          return false;
+        }
+        if (!covers(resourceFree(kennel.id), range) || clashes(null, kennel.id, range)) continue;
+        plan.push({
+          petId: last.petId,
+          stage: "KENNEL",
+          serviceIds: [],
+          employeeId: null,
+          resourceId: kennel.id,
+          start: range.start,
+          end: range.end,
+          blockEnd: range.end,
+          durationMin: (range.end - range.start) / MINUTE,
+          priceCents: 0,
+        });
+        const found = placePet(pi + 1);
+        if (found) return true;
+        plan.pop();
+        if (aborted) return false;
+      }
       return false;
     }
     return placePet(pi + 1);
