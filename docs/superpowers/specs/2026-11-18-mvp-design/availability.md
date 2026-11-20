@@ -10,22 +10,22 @@ DST handling are **unchanged**. This page lists the changes.
 ```ts
 findSlots({
   location,     // + dropOffWindows, maxQueueWaitMin, pickupGraceMin
-  request: {
-    mode: 'WAIT' | 'DROP_OFF',
-    pets: [{ petId, sizeClass, coatType, species,
-             services: [serviceId], preferredGroomerId | 'ANY' }],   // ≤ 4 pets, ≤ 6 services each
-    date | range,
-  },
-  services, prices,      // stage, resource type, required skill; service_price rows
-  employees,             // skills, qualified services, hours, time off
-  resources,             // stations and kennels by type
-  busy, mode: 'ONLINE' | 'STAFF', now,
+  // request fields sit flat on FindSlotsInput:
+  bookingMode: 'WAIT' | 'DROP_OFF',
+  pets: [{ petId, sizeClass, coatType, species,
+           serviceIds: [serviceId], preferredGroomerId | 'ANY' }],   // ≤ 4 pets, ≤ 6 services each
+  date,                // one local date; the API loops over a range
+  services, prices,    // stage, resource type, required skill; service_price rows
+  employees,           // skills, qualified services, hours, time off
+  resources,           // stations and kennels by type
+  busy,                // kennel rows have employeeId: null
+  mode: 'ONLINE' | 'STAFF', now, override,
 }) -> Slot[]
 
-Slot = { start, readyAt, mode, pets: [{ petId, priceCents, segments: [...] }] }
+Slot = { start, readyAt, bookingMode, pets: [{ petId, priceCents, segments: [...] }] }
 ```
 
-The request's `mode` is resolved by the API before calling: if any chosen
+The request's `bookingMode` is resolved by the API before calling: if any chosen
 service is `DROP_OFF` (own setting or location default), the whole appointment
 is drop-off **(call)**.
 
@@ -80,6 +80,23 @@ The owner chooses a **drop-off time**; the shop does the work later that day.
    "Drop off 9:00 · ready around 1:30 pm" (rounded up to 15 min).
 6. Return one plan per drop-off time; the slot list is drop-off times only.
 
+## Search decisions (Plan 02, Task 5)
+
+- **Start candidates:** a segment may start exactly at its lower bound even
+  off the grid (drop-off `d + 10 min`, or the previous segment's end); later
+  starts are grid times. In wait mode the first pet's first segment starts
+  exactly at `t`; later pets' first segments start at or after `t`.
+- **Buffers (Rule B):** `blockEnd = end + bufferAfterMin`, except
+  `blockEnd = end` when the same pet's next segment has the same employee,
+  starts exactly at `end`, and this segment has no station or the next keeps
+  the same station. Kennel segments use `blockEnd = end`.
+- **Drop-off windows are half-open** `[start, end)`: a 09:00–11:00 window
+  offers 09:00 … 10:45 on a 15-min grid.
+- **STAFF with override** ignores drop-off windows (every grid time of the
+  day), as it ignores hours.
+- The "two concurrent holds on the last kennel" test belongs to Plan 04
+  (integration with the database constraints), not to this pure package.
+
 The planned segments are a **feasibility plan**, not a promise of exact times.
 Staff reorder them on the board ([flows](flows.md)); moves re-run the check for
 the changed segments and the constraints guard races.
@@ -109,4 +126,5 @@ the weight puts the pet in another class or for matting (reception edits
 - Drop-off: initial wait + gaps within `maxQueueWaitMin` → slot; one minute
   more → no slot; no free kennel → no slot; kennel freed by pickup grace boundary.
 - Drop-off windows respected; DST day still correct.
-- Two concurrent holds on the last kennel → one `SLOT_TAKEN`.
+- Two concurrent holds on the last kennel → one `SLOT_TAKEN` (Plan 04,
+  integration).

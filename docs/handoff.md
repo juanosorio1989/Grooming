@@ -1,37 +1,54 @@
 # Handoff
 
-Last update: 2026-11-19 · after Plan 01
+Last update: 2026-11-20 · Plan 02 merged; next: write Plan 03
 
 ## Done
 
-- Spec approved: `docs/superpowers/specs/2026-11-18-mvp-design/`. Mockups: https://claude.ai/artifact/Vn2VWpxCPYQC68d6xdWJhF
-- Plan 01 (foundation, auth, schema) implemented and reviewed on `feat/mvp-01-foundation`, merged to `main` via PR.
-  - Monorepo copied from BeautySpa `8a778d5` and renamed (`@grooming/*`, `gr_refresh`, JWT `grooming`, CSRF `x-grooming-csrf`).
-  - Local stack: postgres 5433, redis 6380, mailpit 1026/8026, SeaweedFS S3 9010. MinIO images are no longer published, so SeaweedFS replaced minio.
-  - Grooming Prisma schema in one squashed init migration, enforced in the database:
-    - no overlapping bookings for people or for resources (kennels included);
-    - `segment_staff_matches_stage`;
-    - a partial unique index for the any-coat price row;
-    - `client_ref` unique per organization.
+- Plan 01 merged to `main` (see git history and `docs/provenance.md`).
+- Plan 02 merged to `main`: `pricing`, `tracking` and the grooming `availability` planner
+  (`docs/superpowers/plans/2026-11-18-mvp/02-domain-packages.md`). The final review fix wave
+  (`513b997` kennel backtracking, `aea04fa` skip-ahead clamp) passed a scoped re-review.
 
 ## Next
 
-Write **Plan 02** (pure domain packages: `pricing`, `tracking`, grooming
-`availability` planner) in detail against the merged code, show the routing
-table, then execute it.
+- Write Plan 03 (catalog, staff, pets API) in detail, using the carry-over below.
 
 ## Carry-over for later plans
 
-- Plan 02: replace `AvailabilityErrorCode` planner codes in `packages/availability/src/errors.ts`.
-- Plan 03 cleanup:
-  - secrets:gen test with real generators on empty S3 lines;
-  - CORS should use `AUTH_HEADERS.csrf`;
-  - `pgCode` should assert `meta.target`;
-  - kennel fixture `priceCents: 0`;
-  - assert `service_price_any_coat` `indexdef`;
-  - turbo `test:int` `passThroughEnv` should add `REDIS_URL_TEST` and `DEFAULT_ORG_SLUG`.
-- Plan 04: `pet_visit.pet_id` is nullable while a hold carries a new pet. Set it on confirm.
-- Plan 05: `visit_step.client_ref` is a single column, so it only deduplicates the latest write. Decide whether offline idempotency needs a per-write log.
+- Plan 03:
+  - catalog DTOs: `durationMin >= 1` (or a DB CHECK);
+  - size thresholds are whole lb and strictly increasing;
+  - existing cleanup:
+    - `secrets:gen` test with real generators on empty S3 lines;
+    - CORS should use `AUTH_HEADERS.csrf`;
+    - `pgCode` should assert `meta.target`;
+    - kennel fixture `priceCents: 0`;
+    - assert the `service_price_any_coat` `indexdef`;
+    - turbo `test:int` `passThroughEnv` should add `REDIS_URL_TEST` and `DEFAULT_ORG_SLUG`.
+- Plan 04:
+  - cap the `/availability` date range (worst-case search is about 0.4–0.7 s per date) or add a precheck;
+  - DTOs validate integer ms (NaN makes `validatePlan` throw);
+  - decide whether to grid-check segments after the first;
+  - kennel holds past local midnight (STAFF late drop-off);
+  - exclude the hold's own segments from `busy`;
+  - test two concurrent holds on the last kennel → one `SLOT_TAKEN`;
+  - `pet_visit.pet_id` is nullable while a hold carries a new pet; set it on confirm.
+- Plan 05:
+  - load steps ordered by `sort` (`validateSteps` requires index == sort);
+  - audit the skip reason;
+  - bound reception corrections to ≥ check-in time;
+  - test the untested step paths (SKIP on DONE/SKIPPED, START on an unknown stage, READY with nothing open);
+  - document one `PlannedStage` per stage;
+  - `visit_step.client_ref` only deduplicates the latest write; decide whether offline needs a per-write log.
+- Availability hardening (any plan that touches it):
+  - add the kennel-backtrack drop-off input to `validate-plan.test.ts` "accepts every slot";
+  - key the `freeKeys` memo in `search.ts` by map kind (`e:`/`r:`) as well as id.
+
+## Decisions made during Plan 02 (owner to check)
+
+- In wait mode, the first pet's first segment starts exactly at the slot time. Later pets start at or after it, with no idle limit.
+- `validateSteps` ignores SKIPPED steps that never started (a skip ahead is valid at any time).
+- The name-leak grep excludes `*.md`, because prose docs may name the source product.
 
 ## Open questions
 
