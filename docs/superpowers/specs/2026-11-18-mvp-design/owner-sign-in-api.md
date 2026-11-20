@@ -9,7 +9,7 @@ All paths are under `/v1`. Everything here is a **(call)**.
 |---|---|
 | `GoogleNonceResponseSchema` | `{ nonce: string }` |
 | `GoogleSignInRequestSchema` | `{ idToken: string (1..4096) }` |
-| `GoogleSignInResponseSchema` | discriminated on `status`: `{ status: "SIGNED_IN", accessToken, accessTokenExpiresAt, refreshToken?, isNew: false }` \| `{ status: "PHONE_REQUIRED", linkTicket: string, givenName?: string, name?: string }` |
+| `GoogleSignInResponseSchema` | discriminated on `status`: `{ status: "SIGNED_IN", accessToken, accessTokenExpiresAt, refreshToken?, isNew: boolean }` (`isNew` = `customer.name === null`, as in OTP verify) \| `{ status: "PHONE_REQUIRED", linkTicket: string, givenName?: string, name?: string }` |
 | `OtpVerifyRequestSchema` | adds `linkTicket?: string (1..128)` |
 | `OtpVerifyResponseSchema` | adds `identityLinked?: boolean`, present only when `linkTicket` was sent |
 | `LinkGoogleRequestSchema` | same as `GoogleSignInRequestSchema` |
@@ -36,10 +36,16 @@ When `GOOGLE_OAUTH_CLIENT_IDS` is empty, `/auth/google*` and
 ## Binding to the browser
 
 The nonce and the ticket are bearer values, so each is also bound to the
-browser that asked for it: the API sets an HttpOnly, `Secure`, `SameSite=Strict`
-cookie (path `/v1/auth`, 10 min) holding a random binding value, stores it with
-the nonce/ticket in Redis, and accepts the nonce/ticket only from a request that
-carries the same cookie. This stops an attacker from slipping their own ticket
+browser that asked for it: the API sets a cookie (10 min) holding a random
+binding value, stores it with the nonce/ticket in Redis, and accepts the
+nonce/ticket only from a request that carries the same cookie. Cookie options
+are those of `gr_refresh` (HttpOnly, `COOKIE_SECURE`, `COOKIE_DOMAIN`) except
+`sameSite: "strict"`. Paths: `gr_gnonce` on `/v1` (read by `/auth/google` and
+`/me/identities/google`), `gr_glink` on `/v1/auth` (read by
+`/auth/otp/verify`). The web calls these endpoints with `credentials:
+"include"`, as it does for refresh. One `gr_gnonce` per browser: a newer nonce
+(another tab, or a refetch after 10 min) replaces the older one, so on a `401`
+from `/auth/google` the web fetches a fresh nonce and re-prompts once. This stops an attacker from slipping their own ticket
 into a victim's code verify. The web keeps the ticket in memory only (never in
 a URL or browser storage). Native clients (later) send the binding value in a
 header instead of the cookie.
@@ -58,6 +64,14 @@ A valid code always consumes the ticket. Linking runs in the same transaction
 that finds or creates the customer. The per-phone verify limit applies as
 today.
 
+## Link notice (split across plans)
+
+Plan 04 writes an outbox row in the linking transaction (`outbox_event`, type
+`customer.identity_linked`, payload `{ customerId, email }`). Plan 06 adds the
+worker that reads it and sends the notice through the notification router (EN/ES
+WhatsApp template + email, channel rules in [owner sign-in](owner-sign-in.md)).
+Until Plan 06 lands, rows just accumulate.
+
 ## Identity rows
 
 - `customer_identity.email` is refreshed from the token on every Google
@@ -73,7 +87,7 @@ today.
 |---|---|
 | `/auth/google/nonce` | 30 per IP per 10 min |
 | `/auth/google` | 10 per IP per 10 min; 10 per `sha256(sub)` per 10 min after the token is verified |
-| `/me/identities/google` (POST and DELETE) | 5 per customer per hour |
+| `/me/identities/google` | 5 POST and 5 DELETE per customer per hour |
 
 No Turnstile on `/auth/google*`: the Google ID token is the proof of a real
 user. Turnstile stays on `/auth/otp/start`.
@@ -82,7 +96,7 @@ user. Turnstile stays on `/auth/otp/start`.
 
 | Event | Action | `after` |
 |---|---|---|
-| Google sign-in (found) | `auth.customer.login` | `{ method: "google" }` |
+| Google sign-in (found) | `auth.customer.login` | `{ method: "google", isNew }` |
 | Link (verify or Profile) | `auth.customer.identity_linked` | `{ provider: "GOOGLE" }` |
 | Unlink | `auth.customer.identity_unlinked` | `{ provider: "GOOGLE" }` |
 
@@ -103,4 +117,6 @@ Bad signature, `aud`, `iss`, expiry, unverified email, missing/reused nonce or
 missing cookie → 401; unknown `sub` → `PHONE_REQUIRED`; ticket + valid code
 links; every row of the ticket table; email match never links; deleted
 customer → 401; `409 IDENTITY_TAKEN` both cases with identical bodies; feature
-off → 404 and `linkTicket` ignored; `DELETE /me` removes identities.
+off → 404 and `linkTicket` ignored; `DELETE /me` removes identities; Profile
+link with the nonce cookie succeeds and without it → 401; a link records an
+`identity_linked` outbox row.

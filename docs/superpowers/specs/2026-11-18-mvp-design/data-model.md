@@ -21,6 +21,10 @@ New `customer_identity` (owner sign-in, see [owner sign-in](owner-sign-in.md)):
 `(organization_id, provider, subject)` and `(organization_id, customer_id,
 provider)`; FK `onDelete: Restrict`; rows deleted explicitly on `DELETE /me`.
 
+New `outbox_event`: `id`, `organization_id`, `type`, `payload` jsonb,
+`created_at`, `processed_at` (nullable); written in the same transaction as the
+change, read by workers (first use: the Google link notice).
+
 ## Changed
 
 | Table | Change |

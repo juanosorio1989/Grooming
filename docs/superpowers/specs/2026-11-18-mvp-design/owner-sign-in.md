@@ -84,7 +84,10 @@ Apple, email (magic link or password) and passkeys. See the
   to your account. Not you? Open your profile to unlink it." It is a security
   message about their own account, so it goes out even without marketing
   consent, but only on channels they opted into. This limits phone-code
-  phishing ("read me the code we sent you") and recycled phone numbers.
+  phishing ("read me the code we sent you") and recycled phone numbers. A
+  customer created in the same verify gets no notice (no consent or email yet,
+  nothing to protect); never send it to the Google email, which the person
+  linking controls.
 - `DELETE /me` removes the identity rows; export lists the linked provider and
   email.
 
@@ -125,15 +128,15 @@ Apple, email (magic link or password) and passkeys. See the
 
 - **API (Plan 04, booking):** `customer_identity` table and migration, the
   endpoints and contracts in [API details](owner-sign-in-api.md), 90-day
-  customer refresh, link notice job, export/delete. Tests use a local RSA key
+  customer refresh, `customer.identity_linked` outbox row, export/delete. Tests use a local RSA key
   and a fake JWKS in place of Google's.
 - **Web (Plan 07, owner):** Google button and One Tap on step 3 and on the
   owner-area sign-in, the `PHONE_REQUIRED` path, name prefill, code input
   autofill, Profile link/unlink. On logout the web calls
   `google.accounts.id.disableAutoSelect()`, so One Tap does not sign the owner
   straight back in on a shared device.
-- **Templates (Plan 06):** the link notice in EN/ES (WhatsApp template +
-  email).
+- **Notifications (Plan 06):** the worker that sends the link notice from the
+  outbox, with EN/ES WhatsApp template + email.
 
 ## Left to the builder
 
