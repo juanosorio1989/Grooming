@@ -24,8 +24,8 @@ const MAX_RESULTS = 100;
 const isoDate = (d: Date): string => d.toISOString().slice(0, 10);
 const toDate = (s: string): Date => new Date(`${s}T00:00:00Z`);
 
-type PetRow = Pet & { vaccines: PetVaccine[] };
-const withVaccines = { vaccines: { orderBy: [{ expiresOn: "asc" }, { id: "asc" }] } } satisfies Prisma.PetInclude;
+export type PetRow = Pet & { vaccines: PetVaccine[] };
+export const withVaccines = { vaccines: { orderBy: [{ expiresOn: "asc" }, { id: "asc" }] } } satisfies Prisma.PetInclude;
 
 /** Who is calling: an owner is confined to their own pets, staff to the organization. */
 export interface PetActor {
@@ -55,7 +55,8 @@ export class PetsService {
     private readonly access: PetAccessService,
   ) {}
 
-  private view(p: PetRow): PetView {
+  /** Public so `PetMergeService` can return the merged target in the same shape. */
+  view(p: PetRow): PetView {
     return {
       id: p.id,
       customerId: p.customerId,

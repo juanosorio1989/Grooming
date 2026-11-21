@@ -3,12 +3,14 @@ import type { Request } from "express";
 import { ZodValidationPipe } from "nestjs-zod";
 import {
   IdSchema,
+  PetMergeSchema,
   PetPatchSchema,
   StaffPetCreateSchema,
   StaffPetQuerySchema,
   VaccineInputSchema,
   VaccinePatchSchema,
   type AccessClaims,
+  type PetMerge,
   type PetPatch,
   type PetView,
   type StaffPetCreate,
@@ -19,6 +21,7 @@ import {
 } from "@grooming/contracts";
 import { Principal, StaffAuth } from "../auth/decorators.js";
 import { requestMeta } from "../auth/request-meta.js";
+import { PetMergeService } from "./pet-merge.service.js";
 import { PetsService, type PetActor } from "./pets.service.js";
 
 const IdPipe = new ZodValidationPipe(IdSchema);
@@ -27,13 +30,17 @@ const CreatePipe = new ZodValidationPipe(StaffPetCreateSchema);
 const PatchPipe = new ZodValidationPipe(PetPatchSchema);
 const VaccineCreatePipe = new ZodValidationPipe(VaccineInputSchema);
 const VaccinePatchPipe = new ZodValidationPipe(VaccinePatchSchema);
+const MergePipe = new ZodValidationPipe(PetMergeSchema);
 
 const actor = (claims: AccessClaims): PetActor => ({ type: "STAFF", claims });
 
 /** Pets as managed by staff. EMPLOYEE callers see only pets with a segment assigned to them today (else 404). */
 @Controller("staff/pets")
 export class StaffPetsController {
-  constructor(private readonly pets: PetsService) {}
+  constructor(
+    private readonly pets: PetsService,
+    private readonly merger: PetMergeService,
+  ) {}
 
   @StaffAuth("OWNER", "RECEPTION", "EMPLOYEE")
   @Get()
@@ -57,6 +64,14 @@ export class StaffPetsController {
   @Patch(":id")
   patch(@Param("id", IdPipe) id: string, @Body(PatchPipe) body: PetPatch, @Principal() p: AccessClaims, @Req() req: Request): Promise<PetView> {
     return this.pets.patch(actor(p), id, body, requestMeta(req).ip);
+  }
+
+  /** Merges the duplicate `:id` (source) into `intoPetId` (target); returns the target. */
+  @StaffAuth("OWNER", "RECEPTION")
+  @Post(":id/merge")
+  @HttpCode(200)
+  merge(@Param("id", IdPipe) id: string, @Body(MergePipe) body: PetMerge, @Principal() p: AccessClaims, @Req() req: Request): Promise<PetView> {
+    return this.merger.merge(actor(p), id, body.intoPetId, requestMeta(req).ip);
   }
 
   @StaffAuth("OWNER", "RECEPTION", "EMPLOYEE")

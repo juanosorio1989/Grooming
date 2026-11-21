@@ -89,3 +89,7 @@ export const PetViewSchema = z.object({
   vaccines: z.array(VaccineViewSchema),
 });
 export type PetView = z.infer<typeof PetViewSchema>;
+
+/** `POST /staff/pets/:id/merge`: `:id` is the duplicate (source), merged into `intoPetId` (target). */
+export const PetMergeSchema = z.object({ intoPetId: IdSchema }).strict();
+export type PetMerge = z.infer<typeof PetMergeSchema>;
