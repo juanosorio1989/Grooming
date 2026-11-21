@@ -1,13 +1,13 @@
 import { Injectable } from "@nestjs/common";
-import type { Prisma } from "@prisma/client";
+import type { LocationSettings } from "@grooming/contracts";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { TenancyService } from "../tenancy/tenancy.service.js";
 
 export interface DefaultLocation {
   id: string;
   timezone: string;
-  /** Untyped JSON until the settings schema lands. */
-  settings: Prisma.JsonValue;
+  /** Validated against `LocationSettingsSchema` on write (`PATCH /staff/settings`); not re-parsed on read. */
+  settings: LocationSettings;
 }
 
 /**
@@ -32,8 +32,8 @@ export class LocationService {
       select: { id: true, timezone: true, settings: true },
     });
     if (!loc) throw new Error(`Organization ${organizationId} has no location`);
-    this.cached = loc;
-    return loc;
+    this.cached = { id: loc.id, timezone: loc.timezone, settings: loc.settings as unknown as LocationSettings };
+    return this.cached;
   }
 
   invalidate(): void {
