@@ -9,3 +9,4 @@ One page per area. All paths are under `/v1`.
 - [Staff](staff.md) - employees (profile, skills, services), working hours, time off
 - [Customers](customers.md) - staff customer search/create/edit and the owner `/me` profile
 - [Pets](pets.md) - pets and vaccines for owners and staff, EMPLOYEE "today" scope, encrypted medical notes, duplicate merge
+- [Public](public.md) - unauthenticated locations, services, employees and breeds for the booking web

@@ -1,0 +1,380 @@
+[
+  {
+    "code": "affenpinscher",
+    "species": "DOG",
+    "en": "Affenpinscher",
+    "es": "Affenpinscher",
+    "defaultCoat": "WIRE"
+  },
+  {
+    "code": "beagle",
+    "species": "DOG",
+    "en": "Beagle",
+    "es": "Beagle",
+    "defaultCoat": "SMOOTH"
+  },
+  {
+    "code": "bernese-mountain-dog",
+    "species": "DOG",
+    "en": "Bernese Mountain Dog",
+    "es": "Boyero de Berna",
+    "defaultCoat": "DOUBLE"
+  },
+  {
+    "code": "bichon-frise",
+    "species": "DOG",
+    "en": "Bichon Frise",
+    "es": "Bichón Frisé",
+    "defaultCoat": "CURLY"
+  },
+  {
+    "code": "border-collie",
+    "species": "DOG",
+    "en": "Border Collie",
+    "es": "Border Collie",
+    "defaultCoat": "DOUBLE"
+  },
+  {
+    "code": "boston-terrier",
+    "species": "DOG",
+    "en": "Boston Terrier",
+    "es": "Boston Terrier",
+    "defaultCoat": "SMOOTH"
+  },
+  {
+    "code": "boxer",
+    "species": "DOG",
+    "en": "Boxer",
+    "es": "Bóxer",
+    "defaultCoat": "SMOOTH"
+  },
+  {
+    "code": "bulldog",
+    "species": "DOG",
+    "en": "Bulldog",
+    "es": "Bulldog Inglés",
+    "defaultCoat": "SMOOTH"
+  },
+  {
+    "code": "cavalier-king-charles-spaniel",
+    "species": "DOG",
+    "en": "Cavalier King Charles Spaniel",
+    "es": "Cavalier King Charles Spaniel",
+    "defaultCoat": "LONG"
+  },
+  {
+    "code": "chihuahua",
+    "species": "DOG",
+    "en": "Chihuahua",
+    "es": "Chihuahua",
+    "defaultCoat": "SMOOTH"
+  },
+  {
+    "code": "cocker-spaniel",
+    "species": "DOG",
+    "en": "Cocker Spaniel",
+    "es": "Cocker Spaniel",
+    "defaultCoat": "LONG"
+  },
+  {
+    "code": "collie",
+    "species": "DOG",
+    "en": "Collie",
+    "es": "Collie",
+    "defaultCoat": "LONG"
+  },
+  {
+    "code": "dachshund",
+    "species": "DOG",
+    "en": "Dachshund",
+    "es": "Teckel",
+    "defaultCoat": "SMOOTH"
+  },
+  {
+    "code": "doberman-pinscher",
+    "species": "DOG",
+    "en": "Doberman Pinscher",
+    "es": "Dóberman",
+    "defaultCoat": "SMOOTH"
+  },
+  {
+    "code": "french-bulldog",
+    "species": "DOG",
+    "en": "French Bulldog",
+    "es": "Bulldog Francés",
+    "defaultCoat": "SMOOTH"
+  },
+  {
+    "code": "german-shepherd",
+    "species": "DOG",
+    "en": "German Shepherd",
+    "es": "Pastor Alemán",
+    "defaultCoat": "DOUBLE"
+  },
+  {
+    "code": "golden-retriever",
+    "species": "DOG",
+    "en": "Golden Retriever",
+    "es": "Golden Retriever",
+    "defaultCoat": "DOUBLE"
+  },
+  {
+    "code": "goldendoodle",
+    "species": "DOG",
+    "en": "Goldendoodle",
+    "es": "Goldendoodle",
+    "defaultCoat": "CURLY"
+  },
+  {
+    "code": "great-dane",
+    "species": "DOG",
+    "en": "Great Dane",
+    "es": "Gran Danés",
+    "defaultCoat": "SMOOTH"
+  },
+  {
+    "code": "havanese",
+    "species": "DOG",
+    "en": "Havanese",
+    "es": "Bichón Habanero",
+    "defaultCoat": "LONG"
+  },
+  {
+    "code": "husky",
+    "species": "DOG",
+    "en": "Siberian Husky",
+    "es": "Husky Siberiano",
+    "defaultCoat": "DOUBLE"
+  },
+  {
+    "code": "jack-russell-terrier",
+    "species": "DOG",
+    "en": "Jack Russell Terrier",
+    "es": "Jack Russell Terrier",
+    "defaultCoat": "WIRE"
+  },
+  {
+    "code": "labradoodle",
+    "species": "DOG",
+    "en": "Labradoodle",
+    "es": "Labradoodle",
+    "defaultCoat": "CURLY"
+  },
+  {
+    "code": "labrador-retriever",
+    "species": "DOG",
+    "en": "Labrador Retriever",
+    "es": "Labrador Retriever",
+    "defaultCoat": "DOUBLE"
+  },
+  {
+    "code": "lhasa-apso",
+    "species": "DOG",
+    "en": "Lhasa Apso",
+    "es": "Lhasa Apso",
+    "defaultCoat": "LONG"
+  },
+  {
+    "code": "maltese",
+    "species": "DOG",
+    "en": "Maltese",
+    "es": "Maltés",
+    "defaultCoat": "LONG"
+  },
+  {
+    "code": "miniature-schnauzer",
+    "species": "DOG",
+    "en": "Miniature Schnauzer",
+    "es": "Schnauzer Miniatura",
+    "defaultCoat": "WIRE"
+  },
+  {
+    "code": "pit-bull",
+    "species": "DOG",
+    "en": "Pit Bull",
+    "es": "Pit Bull",
+    "defaultCoat": "SMOOTH"
+  },
+  {
+    "code": "pomeranian",
+    "species": "DOG",
+    "en": "Pomeranian",
+    "es": "Pomerania",
+    "defaultCoat": "DOUBLE"
+  },
+  {
+    "code": "poodle",
+    "species": "DOG",
+    "en": "Poodle",
+    "es": "Caniche",
+    "defaultCoat": "CURLY"
+  },
+  {
+    "code": "pug",
+    "species": "DOG",
+    "en": "Pug",
+    "es": "Pug",
+    "defaultCoat": "SMOOTH"
+  },
+  {
+    "code": "rottweiler",
+    "species": "DOG",
+    "en": "Rottweiler",
+    "es": "Rottweiler",
+    "defaultCoat": "SMOOTH"
+  },
+  {
+    "code": "saint-bernard",
+    "species": "DOG",
+    "en": "Saint Bernard",
+    "es": "San Bernardo",
+    "defaultCoat": "DOUBLE"
+  },
+  {
+    "code": "samoyed",
+    "species": "DOG",
+    "en": "Samoyed",
+    "es": "Samoyedo",
+    "defaultCoat": "DOUBLE"
+  },
+  {
+    "code": "shiba-inu",
+    "species": "DOG",
+    "en": "Shiba Inu",
+    "es": "Shiba Inu",
+    "defaultCoat": "DOUBLE"
+  },
+  {
+    "code": "shih-tzu",
+    "species": "DOG",
+    "en": "Shih Tzu",
+    "es": "Shih Tzu",
+    "defaultCoat": "LONG"
+  },
+  {
+    "code": "west-highland-white-terrier",
+    "species": "DOG",
+    "en": "West Highland White Terrier",
+    "es": "West Highland White Terrier",
+    "defaultCoat": "WIRE"
+  },
+  {
+    "code": "yorkshire-terrier",
+    "species": "DOG",
+    "en": "Yorkshire Terrier",
+    "es": "Yorkshire Terrier",
+    "defaultCoat": "LONG"
+  },
+  {
+    "code": "australian-shepherd",
+    "species": "DOG",
+    "en": "Australian Shepherd",
+    "es": "Pastor Australiano",
+    "defaultCoat": "DOUBLE"
+  },
+  {
+    "code": "corgi",
+    "species": "DOG",
+    "en": "Pembroke Welsh Corgi",
+    "es": "Corgi Galés de Pembroke",
+    "defaultCoat": "DOUBLE"
+  },
+  {
+    "code": "mixed-dog",
+    "species": "DOG",
+    "en": "Mixed Breed Dog",
+    "es": "Perro Mestizo",
+    "defaultCoat": null
+  },
+  {
+    "code": "abyssinian",
+    "species": "CAT",
+    "en": "Abyssinian",
+    "es": "Abisinio",
+    "defaultCoat": "SMOOTH"
+  },
+  {
+    "code": "bengal",
+    "species": "CAT",
+    "en": "Bengal",
+    "es": "Bengalí",
+    "defaultCoat": "SMOOTH"
+  },
+  {
+    "code": "birman",
+    "species": "CAT",
+    "en": "Birman",
+    "es": "Birmano",
+    "defaultCoat": "LONG"
+  },
+  {
+    "code": "british-shorthair",
+    "species": "CAT",
+    "en": "British Shorthair",
+    "es": "Británico de Pelo Corto",
+    "defaultCoat": "DOUBLE"
+  },
+  {
+    "code": "domestic-shorthair",
+    "species": "CAT",
+    "en": "Domestic Shorthair",
+    "es": "Pelo Corto Doméstico",
+    "defaultCoat": "SMOOTH"
+  },
+  {
+    "code": "domestic-longhair",
+    "species": "CAT",
+    "en": "Domestic Longhair",
+    "es": "Pelo Largo Doméstico",
+    "defaultCoat": "LONG"
+  },
+  {
+    "code": "maine-coon",
+    "species": "CAT",
+    "en": "Maine Coon",
+    "es": "Maine Coon",
+    "defaultCoat": "LONG"
+  },
+  {
+    "code": "norwegian-forest-cat",
+    "species": "CAT",
+    "en": "Norwegian Forest Cat",
+    "es": "Gato del Bosque de Noruega",
+    "defaultCoat": "LONG"
+  },
+  {
+    "code": "persian",
+    "species": "CAT",
+    "en": "Persian",
+    "es": "Persa",
+    "defaultCoat": "LONG"
+  },
+  {
+    "code": "ragdoll",
+    "species": "CAT",
+    "en": "Ragdoll",
+    "es": "Ragdoll",
+    "defaultCoat": "LONG"
+  },
+  {
+    "code": "siamese",
+    "species": "CAT",
+    "en": "Siamese",
+    "es": "Siamés",
+    "defaultCoat": "SMOOTH"
+  },
+  {
+    "code": "sphynx",
+    "species": "CAT",
+    "en": "Sphynx",
+    "es": "Esfinge",
+    "defaultCoat": "HAIRLESS"
+  },
+  {
+    "code": "mixed-cat",
+    "species": "CAT",
+    "en": "Mixed Breed Cat",
+    "es": "Gato Mestizo",
+    "defaultCoat": null
+  }
+]
