@@ -10,8 +10,9 @@ import { PrismaModule } from "./prisma/prisma.module.js";
 import { RateLimitModule } from "./rate-limit/rate-limit.module.js";
 import { RedisModule } from "./redis/redis.module.js";
 import { ResourcesModule } from "./resources/resources.module.js";
+import { StaffModule } from "./staff/staff.module.js";
 import { SettingsModule } from "./settings/settings.module.js";
 import { TenancyModule } from "./tenancy/tenancy.module.js";
 
-@Module({ imports: [ConfigModule, PrismaModule, RedisModule, RateLimitModule, TenancyModule, LocationModule, AuditModule, MailModule, AuthModule, HealthModule, SettingsModule, ResourcesModule, CatalogModule] })
+@Module({ imports: [ConfigModule, PrismaModule, RedisModule, RateLimitModule, TenancyModule, LocationModule, AuditModule, MailModule, AuthModule, HealthModule, SettingsModule, ResourcesModule, CatalogModule, StaffModule] })
 export class AppModule {}
