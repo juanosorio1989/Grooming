@@ -25,7 +25,7 @@ describe("employees, services and working hours", () => {
     await resetState(ctx.prisma, ctx.redis);
     f = await seedFixture(ctx.prisma);
     other = await seedFixture(ctx.prisma, { slug: "other-salon" });
-    await ctx.prisma.staffUser.update({ where: { id: f.staffA }, data: { role: "OWNER" } });
+    await ctx.prisma.staffUser.update({ where: { id: f.staffA }, data: { role: "OWNER", canLogin: true } });
     owner = await staffToken(ctx.app, { sub: f.staffA, org: f.orgId, role: "OWNER" });
     reception = await staffToken(ctx.app, { sub: f.staffB, org: f.orgId, role: "RECEPTION" });
     employee = await staffToken(ctx.app, { sub: f.staffB, org: f.orgId, role: "EMPLOYEE" });
@@ -151,19 +151,26 @@ describe("employees, services and working hours", () => {
     expect(stillValid.status).toBe(200);
 
     const live = await svc.create({ type: "STAFF", id }, meta);
+    expect(await ctx.prisma.refreshToken.count({ where: { subjectId: id, revokedAt: null, rotatedAt: null } })).toBeGreaterThan(0);
     const res = await call("patch", `/v1/staff/employees/${id}`, owner).send({ role: "RECEPTION" });
     expect(res.status).toBe(200);
     expect(res.body.role).toBe("RECEPTION");
     expect((await refresh(live.token)).status).toBe(401);
+    const rows = await ctx.prisma.refreshToken.findMany({ where: { subjectType: "STAFF", subjectId: id, revokedAt: null, rotatedAt: null } });
+    expect(rows).toHaveLength(0);
     expect(await ctx.prisma.auditLog.count({ where: { organizationId: f.orgId, action: "employee.update", entityId: id } })).toBe(2);
   });
 
-  it("deactivating a person revokes their refresh tokens", async () => {
+  it("deactivating a person revokes their refresh tokens (checked in the database)", async () => {
     const id = (await create(groomer)).body.id as string;
-    const t = await ctx.app.get(RefreshTokenService).create({ type: "STAFF", id }, { ip: null, userAgent: null });
+    await ctx.prisma.staffUser.update({ where: { id }, data: { canLogin: true } });
+    const svc = ctx.app.get(RefreshTokenService);
+    await svc.create({ type: "STAFF", id }, { ip: null, userAgent: null });
+    await svc.create({ type: "STAFF", id }, { ip: null, userAgent: null });
+    expect(await ctx.prisma.refreshToken.count({ where: { subjectId: id, revokedAt: null } })).toBe(2);
     expect((await call("patch", `/v1/staff/employees/${id}`, owner).send({ active: false })).status).toBe(200);
-    const res = await request(ctx.app.getHttpServer()).post("/v1/auth/refresh").set("x-token-transport", "body").send({ refreshToken: t.token });
-    expect(res.status).toBe(401);
+    expect(await ctx.prisma.refreshToken.count({ where: { subjectId: id, revokedAt: null } })).toBe(0);
+    expect(await ctx.prisma.refreshToken.count({ where: { subjectId: id } })).toBe(2);
   });
 
   it("the last active OWNER cannot be demoted or deactivated; with a second owner it can", async () => {
@@ -173,6 +180,9 @@ describe("employees, services and working hours", () => {
     expect((await ctx.prisma.staffUser.findUniqueOrThrow({ where: { id: f.staffA } })).role).toBe("OWNER");
 
     const second = (await create({ ...groomer, role: "OWNER" })).body.id as string;
+    // A second active OWNER who cannot sign in does not count.
+    expect((await call("patch", url, owner).send({ role: "RECEPTION" })).status).toBe(409);
+    await ctx.prisma.staffUser.update({ where: { id: second }, data: { canLogin: true } });
     expect((await call("patch", url, owner).send({ role: "RECEPTION" })).status).toBe(200);
     // Now the second one is the last owner.
     expect((await call("patch", `/v1/staff/employees/${second}`, owner).send({ active: false })).status).toBe(409);

@@ -108,13 +108,13 @@ export class EmployeesService {
         const before = toView(beforeRow);
         const role = body.role ?? beforeRow.role;
         const active = body.active ?? beforeRow.active;
-        const losesOwner = beforeRow.role === "OWNER" && beforeRow.active && (role !== "OWNER" || !active);
+        const losesOwner = beforeRow.role === "OWNER" && beforeRow.active && beforeRow.canLogin && (role !== "OWNER" || !active);
         if (losesOwner) {
-          // Lock the active owners so two concurrent demotions cannot both pass the check.
+          // Lock the active, login-capable owners so two concurrent demotions cannot both pass the check.
           const owners = await tx.$queryRaw<{ id: string }[]>`
-            SELECT id FROM staff_user WHERE organization_id = ${orgId}::uuid AND role = 'OWNER' AND active = true FOR UPDATE`;
+            SELECT id FROM staff_user WHERE organization_id = ${orgId}::uuid AND role = 'OWNER' AND active = true AND can_login = true ORDER BY id FOR UPDATE`;
           if (!owners.some((o) => o.id !== id)) {
-            throw new ConflictException({ code: "CONFLICT", message: "Cannot demote or deactivate the last active OWNER" });
+            throw new ConflictException({ code: "CONFLICT", message: "Cannot demote or deactivate the last active OWNER who can sign in" });
           }
         }
         const skills: Skill[] = body.skills ?? before.skills;
