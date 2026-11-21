@@ -18,10 +18,12 @@ Last update: 2026-11-20 · Plan 02 merged; owner Google sign-in added to spec; n
 - Owner sign-in: Google (one tap) or phone code; phone verified once per shop;
   customer refresh 90 days. Spec page `docs/superpowers/specs/2026-11-18-mvp-design/owner-sign-in.md`.
   API goes in Plan 04, link-notice templates in Plan 06, web in Plan 07.
-- Owner to do before Plan 07 can be tried for real: create the Google OAuth
-  client and consent screen in Cloud Console (app name, support email,
-  privacy-policy URL that mentions the stored Google email); optionally a
-  Twilio Verify custom SMS template for Android autofill.
+- Google OAuth web client created by the owner (2026-11-20, project `Grooming`,
+  Testing mode, origins `http://localhost:3000` and `http://localhost`). Its ID is
+  in the local `.env` (`GOOGLE_OAUTH_CLIENT_IDS`, `NEXT_PUBLIC_GOOGLE_OAUTH_CLIENT_ID`).
+  Plan 04/07 add both to `.env.example` as placeholders. Still open for
+  production: privacy-policy URL in Branding, production origin, Publish app;
+  optionally a Twilio Verify custom SMS template for Android autofill.
 
 ## Carry-over for later plans
 
