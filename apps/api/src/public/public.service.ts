@@ -90,7 +90,7 @@ export class PublicService {
     const organizationId = await this.tenancy.getOrgId();
     const rows = await this.prisma.staffUser.findMany({
       where: { organizationId, active: true, employeeProfile: { is: { bookableOnline: true, skills: { isEmpty: false } } } },
-      include: { employeeProfile: true, employeeServices: { select: { serviceId: true } } },
+      include: { employeeProfile: true, employeeServices: { where: { service: { active: true, onlineBookable: true } }, select: { serviceId: true } } },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     });
     return rows.flatMap((s) => {

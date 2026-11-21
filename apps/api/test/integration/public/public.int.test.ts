@@ -28,6 +28,9 @@ describe("public reads", () => {
       await p.employeeService.create({ data: { staffUserId: u.id, serviceId: f.serviceId } });
       return u.id;
     };
+    const link = async (staffUserId: string) => {
+      await p.employeeService.createMany({ data: [inactive.id, offline.id].map((serviceId) => ({ staffUserId, serviceId })) });
+    };
     hidden = {
       inactive: inactive.id,
       offline: offline.id,
@@ -36,6 +39,7 @@ describe("public reads", () => {
       empNoSkill: await mk("pub-noskill@test.dev", { displayName: "NoSkill Nick", bookableOnline: true, skills: [] }),
       empInactive: await mk("pub-inactive@test.dev", { displayName: "Gone Gus", bookableOnline: true, skills: ["BATHER"] }, false),
     };
+    await link(hidden.empBookable);
   });
   afterAll(async () => {
     await ctx?.close();
