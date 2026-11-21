@@ -67,6 +67,28 @@ describe("GET /v1/staff/audit", () => {
     expect(new Set(seen).size).toBe(3);
   });
 
+  it("keyset paging is stable across rows with the identical timestamp", async () => {
+    const at = new Date("2026-12-02T10:00:00Z");
+    for (let i = 0; i < 3; i++) {
+      await ctx.prisma.auditLog.create({
+        data: { organizationId: f.orgId, actorType: "SYSTEM", action: "tie.create", entity: "tie", at },
+      });
+    }
+    const first = await get("/v1/staff/audit?entity=tie&limit=2", owner);
+    expect(first.body.items).toHaveLength(2);
+    expect(first.body.nextBefore).not.toBeNull();
+    const second = await get(`/v1/staff/audit?entity=tie&limit=2&before=${encodeURIComponent(first.body.nextBefore)}`, owner);
+    expect(second.body.items).toHaveLength(1);
+    expect(second.body.nextBefore).toBeNull();
+    const ids = [...first.body.items, ...second.body.items].map((i: AuditItem) => i.id);
+    expect(new Set(ids).size).toBe(3);
+    expect(ids).toEqual([...ids].sort().reverse());
+  });
+
+  it("rejects a malformed cursor", async () => {
+    expect((await get("/v1/staff/audit?before=2026-12-01T10:00:00Z", owner)).status).toBe(400);
+  });
+
   it("rejects an out-of-range limit", async () => {
     expect((await get("/v1/staff/audit?limit=101", owner)).status).toBe(400);
   });

@@ -40,14 +40,21 @@ export class AuditService {
     });
   }
 
-  /** Newest first (`at desc, id desc`); `nextBefore` is the last item's `at` when more rows may follow. `ip` is never returned. */
+  /** Newest first (`at desc, id desc`); `nextBefore` is the opaque keyset cursor `<ISO at>_<id>` of the last item when more rows follow. `ip` is never returned. */
   async list(orgId: string, q: AuditQuery): Promise<AuditPage> {
+    let cursor: { at: Date; id: string } | undefined;
+    if (q.before) {
+      const [at, id] = q.before.split("_") as [string, string];
+      cursor = { at: new Date(at), id };
+    }
     const rows = await this.prisma.auditLog.findMany({
       where: {
         organizationId: orgId,
         ...(q.entity ? { entity: q.entity } : {}),
         ...(q.entityId ? { entityId: q.entityId } : {}),
-        ...(q.before ? { at: { lt: new Date(q.before) } } : {}),
+        ...(cursor
+          ? { OR: [{ at: { lt: cursor.at } }, { at: cursor.at, id: { lt: cursor.id } }] }
+          : {}),
       },
       orderBy: [{ at: "desc" }, { id: "desc" }],
       take: q.limit + 1,
@@ -65,6 +72,6 @@ export class AuditService {
       after: r.after,
     }));
     const last = page.at(-1);
-    return { items, nextBefore: rows.length > q.limit && last ? last.at.toISOString() : null };
+    return { items, nextBefore: rows.length > q.limit && last ? `${last.at.toISOString()}_${last.id}` : null };
   }
 }
