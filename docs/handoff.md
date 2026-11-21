@@ -1,6 +1,6 @@
 # Handoff
 
-Last update: 2026-11-20 · Plan 02 merged; owner Google sign-in added to spec; next: write Plan 03
+Last update: 2026-11-20 · Plan 02 merged; owner Google sign-in added to spec; Plan 03 written; next: execute Plan 03
 
 ## Done
 
@@ -11,7 +11,9 @@ Last update: 2026-11-20 · Plan 02 merged; owner Google sign-in added to spec; n
 
 ## Next
 
-- Write Plan 03 (catalog, staff, pets API) in detail, using the carry-over below.
+- Execute Plan 03 (`docs/superpowers/plans/2026-11-18-mvp/03-catalog-staff-pets.md`) on branch
+  `feat/mvp-03-catalog`, subagent-driven; the owner approved the plan and routing 2026-11-20.
+  Check the plan's checkboxes and `git log` for the current task.
 
 ## Spec change 2026-11-20
 
