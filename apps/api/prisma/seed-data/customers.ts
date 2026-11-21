@@ -79,7 +79,7 @@ export const VISITS: VisitSeed[] = [
     services: [
       { service: "Bath & brush", staffEmail: "ana.bather@demo.dev", resource: "Tub 1" },
       { service: "Blow dry", staffEmail: "ana.bather@demo.dev", resource: "Dryer 1" },
-      { service: "Nail trim", staffEmail: "ana.bather@demo.dev", resource: null },
+      { service: "Nail trim", staffEmail: "lia.groomer@demo.dev", resource: null },
     ],
     kennel: null,
     report: { summaryNote: "Max was a happy boy. Undercoat brushed out well.", recommendations: "Brush twice a week to keep shedding down.", nextVisitWeeks: 6 },
@@ -98,7 +98,7 @@ export const VISITS: VisitSeed[] = [
     key: "seed:visit:3", customerPhone: "+12125550104", pet: "Mochi", daysAgo: 4, startHourUtc: 15,
     services: [
       { service: "Cat bath", staffEmail: "diego.bather@demo.dev", resource: "Tub 2" },
-      { service: "Nail trim", staffEmail: "diego.bather@demo.dev", resource: null },
+      { service: "Nail trim", staffEmail: "lia.groomer@demo.dev", resource: null },
     ],
     kennel: "Kennel 2",
     report: { summaryNote: "Mochi tolerated the bath calmly. Coat is soft and clean.", recommendations: "A bath every 8 weeks is plenty.", nextVisitWeeks: 8 },
