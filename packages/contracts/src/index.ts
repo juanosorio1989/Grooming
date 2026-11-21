@@ -4,3 +4,4 @@ export * from "./auth";
 export * from "./health";
 export * from "./audit";
 export * from "./settings";
+export * from "./resources";
