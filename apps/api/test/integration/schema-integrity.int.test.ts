@@ -118,3 +118,15 @@ describe("tenancy and flexible columns", () => {
     expect(row.entityId).toContain(":");
   });
 });
+
+describe("partial indexes", () => {
+  it("service_price_any_coat is unique on (service_id, size_class) for NULL coat rows only", async () => {
+    const rows = await prisma.$queryRaw<{ indexdef: string }[]>`
+      SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'service_price_any_coat'`;
+    expect(rows).toHaveLength(1);
+    const def = rows[0]!.indexdef;
+    expect(def).toContain("UNIQUE");
+    expect(def).toContain("(service_id, size_class)");
+    expect(def).toContain("WHERE (coat_type IS NULL)");
+  });
+});

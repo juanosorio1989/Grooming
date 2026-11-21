@@ -34,4 +34,12 @@ Raw SQL in the init migration (not modelled by Prisma; tests in
 
 Seed (`pnpm --filter @grooming/api db:seed`, idempotent): organization
 `demo-salon`, location `Main` (America/New_York, Mon–Sat 08:00–18:00, settings
-defaults), 3 tubs, 3 tables, 2 dryers, 10 kennels.
+defaults), 3 tubs, 3 tables, 2 dryers, 10 kennels, plus the demo shop:
+3 categories and 15 services (EN/ES) with an S/M/L/XL price matrix (main DOG
+services also have DOUBLE and CURLY rows, +15 % and +15 min), 6 staff (owner,
+receptionist, 2 bathers, 2 groomers, one with both skills) with working hours
+and `employee_service` per skill, 4 owners with 5 dogs and 1 cat (one dog with
+allergies and `NEEDS_MUZZLE`, one expired vaccine) and 3 completed past visits
+with steps, one observation and published reports. Data lives in
+`apps/api/prisma/seed-data/`; the entry point is `runSeed` in `prisma/seed.ts`.
+Medical notes are not seeded (no encryption key).

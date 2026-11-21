@@ -99,7 +99,7 @@ describe("offline idempotency keys", () => {
       prisma.visitStep.create({ data: { organizationId: orgId, petVisitId, stage: "BATH", sort: 1, clientRef: "r1" } });
 
     await step(f.orgId, visitA.id);
-    expect(await rejectionCode(step(f.orgId, visitA.id))).toBe("23505");
+    expect(await rejectionCode(step(f.orgId, visitA.id), "client_ref")).toBe("23505");
     await step(other.orgId, visitB.id);
     expect(await prisma.visitStep.count({ where: { clientRef: "r1" } })).toBe(2);
   });
@@ -121,7 +121,7 @@ describe("offline idempotency keys", () => {
       });
 
     await media(f);
-    expect(await rejectionCode(media(f))).toBe("23505");
+    expect(await rejectionCode(media(f), "client_ref")).toBe("23505");
     await media(other);
     expect(await prisma.media.count({ where: { clientRef: "r1" } })).toBe(2);
   });
@@ -135,7 +135,7 @@ describe("service_price", () => {
       });
 
     await price(null);
-    expect(await rejectionCode(price(null))).toBe("23505");
+    expect(await rejectionCode(price(null), "size_class")).toBe("23505");
     await price("CURLY");
     expect(await prisma.servicePrice.count()).toBe(2);
   });

@@ -1,4 +1,5 @@
 import { type Prisma, PrismaClient, type SegmentStage, type StaffRole } from "@prisma/client";
+import type { LocationSettings } from "@grooming/contracts";
 import { Encryptor } from "../../src/auth/crypto/encryption.js";
 import { hashPassword } from "../../src/auth/crypto/password.js";
 import { testEnv } from "../support/test-env.js";
@@ -24,13 +25,19 @@ export async function truncateAll(prisma: PrismaClient): Promise<void> {
  * exclusion (23P01) or check (23514) violations to a P-code: it throws
  * PrismaClientUnknownRequestError with no `meta`/`cause`, and the SQLSTATE
  * appears only in the message as `code: "23P01"`. `meta.code` / `cause.code`
- * are checked first in case a future Prisma version exposes them.
+ * are checked first in case a future Prisma version exposes them. With
+ * `constraint`, a P2002 only counts when `meta.target` contains that name.
  */
-export function pgCode(err: unknown): string | undefined {
+export function pgCode(err: unknown, constraint?: string): string | undefined {
   if (typeof err !== "object" || err === null) return undefined;
   const e = err as { code?: unknown; meta?: Record<string, unknown>; cause?: { code?: unknown }; message?: string };
   // Prisma maps unique violations (23505) to P2002 and drops the SQLSTATE.
-  if (e.code === "P2002") return "23505";
+  if (e.code === "P2002") {
+    if (constraint === undefined) return "23505";
+    const target = e.meta?.target;
+    const names = Array.isArray(target) ? target.map(String) : typeof target === "string" ? [target] : [];
+    return names.includes(constraint) ? "23505" : undefined;
+  }
   const metaCode = e.meta?.code;
   if (typeof metaCode === "string" && /^[0-9A-Z]{5}$/.test(metaCode)) return metaCode;
   const causeCode = e.cause?.code;
@@ -38,14 +45,32 @@ export function pgCode(err: unknown): string | undefined {
   return /code: "([0-9A-Z]{5})"/.exec(e.message ?? "")?.[1];
 }
 
-export async function rejectionCode(promise: Promise<unknown>): Promise<string | undefined> {
+export async function rejectionCode(promise: Promise<unknown>, constraint?: string): Promise<string | undefined> {
   try {
     await promise;
   } catch (err) {
-    return pgCode(err) ?? `unrecognized: ${(err as Error).message}`;
+    return pgCode(err, constraint) ?? `unrecognized: ${(err as Error).message}`;
   }
   return undefined;
 }
+
+/** Same values as `prisma/seed.ts` LOCATION_SETTINGS; the fixture location stores these. */
+export const FIXTURE_SETTINGS: LocationSettings = {
+  slotIntervalMin: 15,
+  holdMinutes: 5,
+  cancelWindowHours: 24,
+  bookingHorizonDays: 60,
+  minLeadMinutes: 60,
+  defaultBookingMode: "DROP_OFF",
+  dropOffWindows: Object.fromEntries([1, 2, 3, 4, 5, 6].map((d) => [String(d), [{ from: "08:00", to: "11:00" }]])),
+  maxQueueWaitMin: 90,
+  pickupGraceMin: 60,
+  sizeThresholdsLb: { S: 20, M: 50, L: 90 },
+  requireAfterPhoto: true,
+  vaccinePolicy: "WARN",
+  requiredVaccines: { DOG: ["RABIES"] },
+  etaNotifyThresholdMin: 30,
+};
 
 export interface Fixture {
   orgId: string;
@@ -76,7 +101,7 @@ export async function seedFixture(prisma: PrismaClient, opts: FixtureOpts = {}):
     data: { name: "Test Grooming", slug: opts.slug ?? "test-salon", defaultLocale: "en" },
   });
   const location = await prisma.location.create({
-    data: { organizationId: org.id, name: "Main", timezone: "America/New_York", settings: {} },
+    data: { organizationId: org.id, name: "Main", timezone: "America/New_York", settings: FIXTURE_SETTINGS },
   });
   const staffA = await prisma.staffUser.create({
     data: { organizationId: org.id, email: "a@test.dev", role: "EMPLOYEE", locale: "en" },
@@ -184,7 +209,7 @@ export function bookSegment(prisma: PrismaClient, f: Fixture, s: SegmentInput) {
         endsAt,
         blockEndsAt: s.blockEndsAt ? at(s.blockEndsAt) : endsAt,
         durationMin: Math.round((endsAt.getTime() - startsAt.getTime()) / 60_000),
-        priceCents: 4000,
+        priceCents: (s.stage ?? "BATH") === "KENNEL" ? 0 : 4000,
         occupies: s.occupies ?? true,
       },
     });
