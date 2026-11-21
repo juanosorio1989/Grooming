@@ -135,8 +135,7 @@ describe("service_price", () => {
       });
 
     await price(null);
-    // Unconstrained: Prisma does not know the raw partial index, so it reports no usable `meta.target`.
-    expect(await rejectionCode(price(null))).toBe("23505");
+    expect(await rejectionCode(price(null), "size_class")).toBe("23505");
     await price("CURLY");
     expect(await prisma.servicePrice.count()).toBe(2);
   });
