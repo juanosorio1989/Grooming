@@ -121,7 +121,7 @@ describe("offline idempotency keys", () => {
       });
 
     await media(f);
-    expect(await rejectionCode(media(f))).toBe("23505");
+    expect(await rejectionCode(media(f), "client_ref")).toBe("23505");
     await media(other);
     expect(await prisma.media.count({ where: { clientRef: "r1" } })).toBe(2);
   });
@@ -135,6 +135,7 @@ describe("service_price", () => {
       });
 
     await price(null);
+    // Unconstrained: Prisma does not know the raw partial index, so it reports no usable `meta.target`.
     expect(await rejectionCode(price(null))).toBe("23505");
     await price("CURLY");
     expect(await prisma.servicePrice.count()).toBe(2);
