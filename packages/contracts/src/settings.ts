@@ -75,17 +75,16 @@ export const LocationHoursListSchema = z
     "Ranges of one weekday must not overlap",
   );
 
-export const ClosureSchema = z
-  .object({ startsAt: IsoInstantSchema, endsAt: IsoInstantSchema, reason: z.string().max(200).optional() })
-  .strict()
-  .refine((c) => Date.parse(c.startsAt) < Date.parse(c.endsAt), "startsAt must be before endsAt");
+const ClosureBase = z.object({ startsAt: IsoInstantSchema, endsAt: IsoInstantSchema, reason: z.string().max(200).optional() });
+const closureOrder = (c: { startsAt: string; endsAt: string }) => Date.parse(c.startsAt) < Date.parse(c.endsAt);
+export const ClosureSchema = ClosureBase.strict().refine(closureOrder, "startsAt must be before endsAt");
 export type Closure = z.infer<typeof ClosureSchema>;
 
 export const ClosureQuerySchema = z.object({ from: IsoInstantSchema.optional(), to: IsoInstantSchema.optional() }).strict();
 export type ClosureQuery = z.infer<typeof ClosureQuerySchema>;
 
-export const ClosureItemSchema = ClosureSchema.and(z.object({ id: IdSchema }));
-export type ClosureItem = Closure & { id: string };
+export const ClosureItemSchema = ClosureBase.extend({ id: IdSchema }).strict().refine(closureOrder, "startsAt must be before endsAt");
+export type ClosureItem = z.infer<typeof ClosureItemSchema>;
 
 export const LocationInfoSchema = z.object({
   id: IdSchema,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ClosureSchema, LocationHoursListSchema, LocationSettingsPatchSchema, LocationSettingsSchema } from "./settings";
+import { ClosureItemSchema, ClosureSchema, LocationHoursListSchema, LocationSettingsPatchSchema, LocationSettingsSchema } from "./settings";
 
 const SETTINGS = {
   slotIntervalMin: 15,
@@ -60,4 +60,6 @@ describe("ClosureSchema", () => {
     expect(ClosureSchema.safeParse({ startsAt: "2026-12-25T00:00:00Z", endsAt: "2026-12-26T00:00:00Z" }).success).toBe(true);
     expect(ClosureSchema.safeParse({ startsAt: "2026-12-25T00:00:00Z", endsAt: "2026-12-25T00:00:00Z" }).success).toBe(false);
   });
+  it("ClosureItemSchema accepts an item with id", () =>
+    expect(ClosureItemSchema.safeParse({ id: "11111111-1111-4111-8111-111111111111", startsAt: "2026-12-25T00:00:00Z", endsAt: "2026-12-26T00:00:00Z" }).success).toBe(true));
 });

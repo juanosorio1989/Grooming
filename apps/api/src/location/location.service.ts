@@ -1,12 +1,12 @@
 import { Injectable } from "@nestjs/common";
-import type { LocationSettings } from "@grooming/contracts";
+import { LocationSettingsSchema, type LocationSettings } from "@grooming/contracts";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { TenancyService } from "../tenancy/tenancy.service.js";
 
 export interface DefaultLocation {
   id: string;
   timezone: string;
-  /** Validated against `LocationSettingsSchema` on write (`PATCH /staff/settings`); not re-parsed on read. */
+  /** Parsed with `LocationSettingsSchema`; an invalid stored row throws (500, misconfiguration). */
   settings: LocationSettings;
 }
 
@@ -32,7 +32,7 @@ export class LocationService {
       select: { id: true, timezone: true, settings: true },
     });
     if (!loc) throw new Error(`Organization ${organizationId} has no location`);
-    this.cached = { id: loc.id, timezone: loc.timezone, settings: loc.settings as unknown as LocationSettings };
+    this.cached = { id: loc.id, timezone: loc.timezone, settings: LocationSettingsSchema.parse(loc.settings) };
     return this.cached;
   }
 

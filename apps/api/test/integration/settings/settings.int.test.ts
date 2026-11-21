@@ -3,25 +3,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { LocationSettings } from "@grooming/contracts";
 import { LocationService } from "../../../src/location/location.service.js";
 import { createIntegrationApp, resetState } from "../app.js";
-import { seedFixture, type Fixture } from "../helpers.js";
+import { FIXTURE_SETTINGS, seedFixture, type Fixture } from "../helpers.js";
 import { staffToken } from "../tokens.js";
 
-const SETTINGS: LocationSettings = {
-  slotIntervalMin: 15,
-  holdMinutes: 5,
-  cancelWindowHours: 24,
-  bookingHorizonDays: 60,
-  minLeadMinutes: 60,
-  defaultBookingMode: "DROP_OFF",
-  dropOffWindows: Object.fromEntries([1, 2, 3, 4, 5, 6].map((d) => [String(d), [{ from: "08:00", to: "11:00" }]])),
-  maxQueueWaitMin: 90,
-  pickupGraceMin: 60,
-  sizeThresholdsLb: { S: 20, M: 50, L: 90 },
-  requireAfterPhoto: true,
-  vaccinePolicy: "WARN",
-  requiredVaccines: { DOG: ["RABIES"] },
-  etaNotifyThresholdMin: 30,
-};
+const SETTINGS = FIXTURE_SETTINGS;
 
 describe("staff settings, hours and closures", () => {
   let ctx: Awaited<ReturnType<typeof createIntegrationApp>>;
@@ -37,7 +22,6 @@ describe("staff settings, hours and closures", () => {
     ctx = await createIntegrationApp();
     await resetState(ctx.prisma, ctx.redis);
     f = await seedFixture(ctx.prisma);
-    await ctx.prisma.location.update({ where: { id: f.locationId }, data: { settings: SETTINGS } });
     owner = await staffToken(ctx.app, { sub: f.staffA, org: f.orgId, role: "OWNER" });
     reception = await staffToken(ctx.app, { sub: f.staffA, org: f.orgId, role: "RECEPTION" });
   });

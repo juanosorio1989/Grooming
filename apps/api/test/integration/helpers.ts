@@ -1,4 +1,5 @@
 import { type Prisma, PrismaClient, type SegmentStage, type StaffRole } from "@prisma/client";
+import type { LocationSettings } from "@grooming/contracts";
 import { Encryptor } from "../../src/auth/crypto/encryption.js";
 import { hashPassword } from "../../src/auth/crypto/password.js";
 import { testEnv } from "../support/test-env.js";
@@ -53,6 +54,24 @@ export async function rejectionCode(promise: Promise<unknown>, constraint?: stri
   return undefined;
 }
 
+/** Same values as `prisma/seed.ts` LOCATION_SETTINGS; the fixture location stores these. */
+export const FIXTURE_SETTINGS: LocationSettings = {
+  slotIntervalMin: 15,
+  holdMinutes: 5,
+  cancelWindowHours: 24,
+  bookingHorizonDays: 60,
+  minLeadMinutes: 60,
+  defaultBookingMode: "DROP_OFF",
+  dropOffWindows: Object.fromEntries([1, 2, 3, 4, 5, 6].map((d) => [String(d), [{ from: "08:00", to: "11:00" }]])),
+  maxQueueWaitMin: 90,
+  pickupGraceMin: 60,
+  sizeThresholdsLb: { S: 20, M: 50, L: 90 },
+  requireAfterPhoto: true,
+  vaccinePolicy: "WARN",
+  requiredVaccines: { DOG: ["RABIES"] },
+  etaNotifyThresholdMin: 30,
+};
+
 export interface Fixture {
   orgId: string;
   locationId: string;
@@ -82,7 +101,7 @@ export async function seedFixture(prisma: PrismaClient, opts: FixtureOpts = {}):
     data: { name: "Test Grooming", slug: opts.slug ?? "test-salon", defaultLocale: "en" },
   });
   const location = await prisma.location.create({
-    data: { organizationId: org.id, name: "Main", timezone: "America/New_York", settings: {} },
+    data: { organizationId: org.id, name: "Main", timezone: "America/New_York", settings: FIXTURE_SETTINGS },
   });
   const staffA = await prisma.staffUser.create({
     data: { organizationId: org.id, email: "a@test.dev", role: "EMPLOYEE", locale: "en" },

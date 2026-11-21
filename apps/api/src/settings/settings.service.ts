@@ -1,5 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 import { Injectable, NotFoundException } from "@nestjs/common";
+import { ZodValidationException } from "nestjs-zod";
 import type { Prisma, SizeClass } from "@prisma/client";
 import type {
   AccessClaims,
@@ -11,6 +12,7 @@ import type {
   SettingsPatchBody,
   SettingsView,
 } from "@grooming/contracts";
+import { LocationSettingsSchema } from "@grooming/contracts";
 import { sizeClassFromWeight } from "@grooming/pricing";
 import { AuditService } from "../audit/audit.service.js";
 import { dbTimeToWall, wallToDbTime } from "../common/wall-time.js";
@@ -43,7 +45,7 @@ export class SettingsService {
     const hours = await db.locationHours.findMany({ where: { locationId }, orderBy: [{ weekday: "asc" }, { opens: "asc" }] });
     return {
       location: { id: loc.id, name: loc.name, address: loc.address, phone: loc.phone, timezone: loc.timezone },
-      settings: loc.settings as unknown as LocationSettings,
+      settings: LocationSettingsSchema.parse(loc.settings),
       hours: hours.map((h) => ({ weekday: h.weekday, opens: dbTimeToWall(h.opens, false), closes: dbTimeToWall(h.closes, true) })),
     };
   }
@@ -75,11 +77,17 @@ export class SettingsService {
       const locationChanged = Object.keys(afterLoc).length > 0;
       if (!settingsChanged && !locationChanged) return this.viewOf(tx, locationId);
 
+      let merged: LocationSettings | undefined;
+      if (settingsChanged) {
+        const r = LocationSettingsSchema.safeParse({ ...current, ...afterSettings });
+        if (!r.success) throw new ZodValidationException(r.error);
+        merged = r.data;
+      }
       await tx.location.update({
         where: { id: locationId },
         data: {
           ...afterLoc,
-          ...(settingsChanged ? { settings: { ...current, ...afterSettings } as Prisma.InputJsonObject } : {}),
+          ...(merged ? { settings: merged as unknown as Prisma.InputJsonObject } : {}),
         },
       });
       if ("sizeThresholdsLb" in afterSettings) {
