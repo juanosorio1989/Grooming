@@ -186,6 +186,17 @@ export class CatalogService {
         await this.assertRefs(tx, orgId, has("categoryId") ? categoryId : null, has("resourceTypeId") ? resourceTypeId : null);
       }
       if (active) await this.assertStageRule(tx, orgId, { id, stage, species, resourceTypeId });
+      if (body.requiredSkill && body.requiredSkill !== before.requiredSkill) {
+        const unqualified = await tx.employeeService.count({
+          where: { serviceId: id, staffUser: { NOT: { employeeProfile: { is: { skills: { has: body.requiredSkill } } } } } },
+        });
+        if (unqualified > 0) {
+          throw new BadRequestException({
+            code: "VALIDATION_FAILED",
+            message: "people assigned to this service lack the new skill; update their services first",
+          });
+        }
+      }
       const row = await tx.service.update({
         where: { id },
         data: {
@@ -235,6 +246,7 @@ export class CatalogService {
   async replacePrices(actor: AccessClaims, id: string, rows: PriceMatrix, ip: string | null): Promise<ServicePriceRow[]> {
     const orgId = await this.tenancy.getOrgId();
     return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM service WHERE id = ${id}::uuid AND organization_id = ${orgId}::uuid FOR UPDATE`;
       const before = toView(await this.find(tx, orgId, id)).prices;
       await tx.servicePrice.deleteMany({ where: { serviceId: id } });
       if (rows.length > 0) {

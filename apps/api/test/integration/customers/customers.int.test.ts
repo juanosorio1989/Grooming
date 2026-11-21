@@ -72,6 +72,25 @@ describe("customers", () => {
     await bookSegment(ctx.prisma, f, { staffUserId: f.staffA, startsAt: "09:00", endsAt: "10:00" });
   });
 
+  it("EMPLOYEE scope ignores segments on a cancelled appointment", async () => {
+    const now = Date.now();
+    const visit = await ctx.prisma.appointment.create({
+      data: { organizationId: f.orgId, locationId: f.locationId, customerId: f.customerId, status: "CANCELLED", source: "ONLINE", bookingMode: "DROP_OFF" },
+    });
+    const pv = await ctx.prisma.petVisit.create({
+      data: { organizationId: f.orgId, appointmentId: visit.id, petId: f.petId, status: "BOOKED", sizeClassAtBooking: "M", priceCentsQuoted: 4000 },
+    });
+    await ctx.prisma.appointmentSegment.create({
+      data: {
+        organizationId: f.orgId, appointmentId: visit.id, petVisitId: pv.id, stage: "BATH", serviceId: f.serviceId, staffUserId: f.staffB,
+        startsAt: new Date(now + 86_400_000), endsAt: new Date(now + 86_400_000 + 3_600_000),
+        blockEndsAt: new Date(now + 86_400_000 + 3_600_000), durationMin: 60, priceCents: 4000,
+      },
+    });
+    expect((await call("get", "/v1/staff/customers?q=ana", employeeB)).body).toEqual([]);
+    expect((await call("get", `/v1/staff/customers/${f.customerId}`, employeeB)).status).toBe(404);
+  });
+
   it("creates with createdVia RECEPTION and audit; duplicate phone is 409 with the existing id", async () => {
     const res = await call("post", "/v1/staff/customers", reception).send({ name: "Cy", phone: "+13055550300", locale: "en", email: "Cy@Test.dev" });
     expect(res.status).toBe(201);

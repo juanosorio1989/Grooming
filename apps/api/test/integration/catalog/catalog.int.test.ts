@@ -1,7 +1,7 @@
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createIntegrationApp, resetState } from "../app.js";
-import { seedFixture, type Fixture } from "../helpers.js";
+import { createStaff, seedFixture, type Fixture } from "../helpers.js";
 import { staffToken } from "../tokens.js";
 
 const body = (over: Record<string, unknown> = {}) => ({
@@ -155,5 +155,23 @@ describe("categories, services and price matrix", () => {
     const other = await seedFixture(ctx.prisma, { slug: "other-salon" });
     expect((await call("get", `/v1/staff/services/${other.serviceId}`, owner)).status).toBe(404);
     expect((await call("put", `/v1/staff/services/${other.serviceId}/prices`, owner).send([])).status).toBe(404);
+  });
+
+  it("changing requiredSkill is 400 while an assigned employee lacks the new skill, 200 once they have it", async () => {
+    const svc = await call("post", "/v1/staff/services", owner).send(body({ stage: "GROOM", requiredSkill: "GROOMER", resourceTypeId: null }));
+    expect(svc.status).toBe(201);
+    const person = await createStaff(ctx.prisma, f, { email: "skill.check@example.com", role: "EMPLOYEE", canLogin: false });
+    await ctx.prisma.employeeProfile.create({ data: { staffUserId: person.id, displayName: "Sk", skills: ["GROOMER"] } });
+    await ctx.prisma.employeeService.create({ data: { staffUserId: person.id, serviceId: svc.body.id } });
+
+    const bad = await call("patch", `/v1/staff/services/${svc.body.id}`, owner).send({ requiredSkill: "BATHER" });
+    expect(bad.status).toBe(400);
+    expect(bad.body.code).toBe("VALIDATION_FAILED");
+    expect((await ctx.prisma.service.findUniqueOrThrow({ where: { id: svc.body.id } })).requiredSkill).toBe("GROOMER");
+
+    await ctx.prisma.employeeProfile.update({ where: { staffUserId: person.id }, data: { skills: ["GROOMER", "BATHER"] } });
+    const ok = await call("patch", `/v1/staff/services/${svc.body.id}`, owner).send({ requiredSkill: "BATHER" });
+    expect(ok.status).toBe(200);
+    expect(ok.body.requiredSkill).toBe("BATHER");
   });
 });

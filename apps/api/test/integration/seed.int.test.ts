@@ -41,4 +41,23 @@ describe("development seed", () => {
     const location = await prisma.location.findFirstOrThrow();
     expect(LocationSettingsSchema.safeParse(location.settings).success).toBe(true);
   });
+
+  it("only assigns and schedules qualified staff", async () => {
+    await runSeed(prisma);
+    const links = await prisma.employeeService.findMany({
+      include: { service: true, staffUser: { include: { employeeProfile: true } } },
+    });
+    expect(links.length).toBeGreaterThan(0);
+    for (const l of links) {
+      expect(l.staffUser.employeeProfile?.skills).toContain(l.service.requiredSkill);
+    }
+    const segments = await prisma.appointmentSegment.findMany({
+      where: { staffUserId: { not: null }, serviceId: { not: null } },
+      include: { service: true, staffUser: { include: { employeeProfile: true } } },
+    });
+    expect(segments.length).toBeGreaterThan(0);
+    for (const s of segments) {
+      expect(s.staffUser?.employeeProfile?.skills).toContain(s.service?.requiredSkill);
+    }
+  });
 });

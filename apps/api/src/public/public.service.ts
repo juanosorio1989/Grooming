@@ -59,7 +59,7 @@ export class PublicService {
     const organizationId = await this.tenancy.getOrgId();
     const [cats, rows] = await Promise.all([
       this.prisma.serviceCategory.findMany({ where: { organizationId }, orderBy: [{ sort: "asc" }, { id: "asc" }] }),
-      this.prisma.service.findMany({ where: { organizationId, active: true, onlineBookable: true }, include: { prices: true } }),
+      this.prisma.service.findMany({ where: { organizationId, active: true, onlineBookable: true, prices: { some: {} } }, include: { prices: true } }),
     ]);
     const sortOf = new Map(cats.map((c) => [c.id, c.sort]));
     const rank = (categoryId: string | null) => (categoryId ? (sortOf.get(categoryId) ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER);

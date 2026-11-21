@@ -55,6 +55,7 @@ export class CustomersService {
     return {
       appointments: {
         some: {
+          status: { not: "CANCELLED" },
           segments: {
             some: {
               staffUserId: actor.sub,

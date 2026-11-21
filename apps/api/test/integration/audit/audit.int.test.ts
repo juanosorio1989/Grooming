@@ -97,4 +97,16 @@ describe("GET /v1/staff/audit", () => {
     expect((await get("/v1/staff/audit", reception)).status).toBe(403);
     expect((await get("/v1/staff/audit")).status).toBe(401);
   });
+
+  it("never returns rows of another organization", async () => {
+    const other = await seedFixture(ctx.prisma, { slug: "audit-other-salon" });
+    await ctx.prisma.auditLog.create({
+      data: { organizationId: other.orgId, actorType: "STAFF", actorId: other.staffA, entity: "service", entityId: serviceEntityId, action: "service.delete", at: new Date("2026-12-02T10:00:00Z") },
+    });
+    const all = await get("/v1/staff/audit", owner);
+    expect((all.body.items as AuditItem[]).map((i) => i.action)).not.toContain("service.delete");
+    const filtered = await get(`/v1/staff/audit?entity=service&entityId=${serviceEntityId}`, owner);
+    expect((filtered.body.items as AuditItem[]).map((i) => i.action)).not.toContain("service.delete");
+    expect(filtered.body.items).toHaveLength(2);
+  });
 });

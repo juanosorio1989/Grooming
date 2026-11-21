@@ -1,6 +1,7 @@
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createIntegrationApp, resetState } from "../app.js";
+import { localDayBoundsUtc, todayIn } from "@grooming/datetime";
 import { seedFixture, type Fixture } from "../helpers.js";
 import { staffToken } from "../tokens.js";
 
@@ -14,15 +15,20 @@ describe("staff pets", () => {
   const call = (method: "get" | "post" | "patch" | "delete", path: string, token: string) =>
     request(ctx.app.getHttpServer())[method](path).set("Authorization", `Bearer ${token}`);
 
-  /** Inserts a segment for `staffId` on a visit of the fixture pet, `offsetMs` from now. */
-  async function segmentAt(staffId: string, offsetMs: number, status: "BOOKED" | "CANCELLED" = "BOOKED") {
+  /** Start of the shop's local day (location timezone). */
+  async function dayStart(): Promise<number> {
+    const { timezone } = await ctx.prisma.location.findUniqueOrThrow({ where: { id: f.locationId }, select: { timezone: true } });
+    return localDayBoundsUtc(todayIn(timezone, Date.now()), timezone).start;
+  }
+
+  /** Inserts a segment for `staffId` on a visit of the fixture pet starting at `startsAt`. */
+  async function segmentAt(staffId: string, startsAt: Date, status: "BOOKED" | "CANCELLED" = "BOOKED") {
     const appt = await ctx.prisma.appointment.create({
       data: { organizationId: f.orgId, locationId: f.locationId, customerId: f.customerId, status, source: "ONLINE", bookingMode: "DROP_OFF" },
     });
     const pv = await ctx.prisma.petVisit.create({
       data: { organizationId: f.orgId, appointmentId: appt.id, petId: f.petId, status: "BOOKED", sizeClassAtBooking: "M", priceCentsQuoted: 4000 },
     });
-    const startsAt = new Date(Date.now() + offsetMs);
     return ctx.prisma.appointmentSegment.create({
       data: {
         organizationId: f.orgId, appointmentId: appt.id, petVisitId: pv.id, stage: "BATH", serviceId: f.serviceId, staffUserId: staffId,
@@ -72,14 +78,17 @@ describe("staff pets", () => {
   it("EMPLOYEE sees a pet only with a non-cancelled segment today", async () => {
     expect((await call("get", "/v1/staff/pets", employeeA)).body).toEqual([]);
     expect((await call("get", `/v1/staff/pets/${f.petId}`, employeeA)).status).toBe(404);
-    await segmentAt(f.staffA, -86_400_000 * 2);
+    const start = await dayStart();
+    const today = new Date(start + 3_600_000);
+    const yesterday = new Date(start - 3_600_000);
+    await segmentAt(f.staffA, yesterday);
     expect((await call("get", `/v1/staff/pets/${f.petId}`, employeeA)).status).toBe(404);
-    await segmentAt(f.staffA, -120_000, "CANCELLED");
+    await segmentAt(f.staffA, new Date(today.getTime() + 3_600_000), "CANCELLED");
     expect((await call("get", `/v1/staff/pets/${f.petId}`, employeeA)).status).toBe(404);
     expect((await call("get", "/v1/staff/pets", employeeA)).body).toEqual([]);
-    await segmentAt(f.staffB, 0);
+    await segmentAt(f.staffB, today);
     expect((await call("get", `/v1/staff/pets/${f.petId}`, employeeA)).status).toBe(404);
-    await segmentAt(f.staffA, 120_000);
+    await segmentAt(f.staffA, today);
     const got = await call("get", `/v1/staff/pets/${f.petId}`, employeeA);
     expect(got.status).toBe(200);
     expect(got.body.medicalNotes).toBe("Heart murmur");

@@ -7,7 +7,7 @@ describe("public reads", () => {
   let ctx: Awaited<ReturnType<typeof createIntegrationApp>>;
   let f: Fixture;
   const get = (path: string) => request(ctx.app.getHttpServer()).get(path);
-  let hidden: { inactive: string; offline: string; empBookable: string; empOff: string; empNoSkill: string; empInactive: string };
+  let hidden: { noPrices: string; inactive: string; offline: string; empBookable: string; empOff: string; empNoSkill: string; empInactive: string };
 
   beforeAll(async () => {
     ctx = await createIntegrationApp();
@@ -31,7 +31,9 @@ describe("public reads", () => {
     const link = async (staffUserId: string) => {
       await p.employeeService.createMany({ data: [inactive.id, offline.id].map((serviceId) => ({ staffUserId, serviceId })) });
     };
+    const noPrices = await p.service.create({ data: { ...base, name: { en: "No prices", es: "Sin precios" } } });
     hidden = {
+      noPrices: noPrices.id,
       inactive: inactive.id,
       offline: offline.id,
       empBookable: await mk("pub-ok@test.dev", { displayName: "Visible Vic", bookableOnline: true, skills: ["GROOMER"] }),
@@ -61,6 +63,7 @@ describe("public reads", () => {
     expect(ids).toContain(f.serviceId);
     expect(ids).not.toContain(hidden.inactive);
     expect(ids).not.toContain(hidden.offline);
+    expect(ids).not.toContain(hidden.noPrices);
     const s = r.body.services.find((x: { id: string }) => x.id === f.serviceId);
     expect(s.prices).toEqual([{ sizeClass: "M", coatType: null, durationMin: 30, priceCents: 4000 }]);
     expect(s).not.toHaveProperty("active");
