@@ -8,3 +8,4 @@ One page per area. All paths are under `/v1`.
 - [Catalog](catalog.md) - service categories, services (stage/resource rule) and the size x coat price matrix
 - [Staff](staff.md) - employees (profile, skills, services), working hours, time off
 - [Customers](customers.md) - staff customer search/create/edit and the owner `/me` profile
+- [Pets](pets.md) - pets and vaccines for owners and staff, EMPLOYEE "today" scope, encrypted medical notes
