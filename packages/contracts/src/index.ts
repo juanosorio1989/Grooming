@@ -5,3 +5,4 @@ export * from "./health";
 export * from "./audit";
 export * from "./settings";
 export * from "./resources";
+export * from "./catalog";
