@@ -57,7 +57,7 @@ describe("staff pet merge", () => {
     await ctx?.close();
   });
 
-  it("moves visits, media and vaccines, dedupes vaccines, fills empty fields, soft-deletes the source, audits", async () => {
+  it("moves visits, media and vaccines (different expiries are all kept), fills empty fields, soft-deletes the source, audits", async () => {
     await createPetVisit(ctx.prisma, { ...f, petId: source });
     const m = await media(source);
     await ctx.prisma.petVaccine.createMany({
@@ -80,13 +80,13 @@ describe("staff pet merge", () => {
     expect(res.body.allergies).toEqual(["Chicken", "Beef"]);
     expect(res.body.temperament).toEqual(["CALM", "NERVOUS"]);
     const vaccines = (res.body.vaccines as { type: string; expiresOn: string }[]).map((v) => `${v.type}:${v.expiresOn}`).sort();
-    expect(vaccines).toEqual(["DHPP:2027-06-01", "RABIES:2028-01-01"]);
+    expect(vaccines).toEqual(["DHPP:2027-06-01", "RABIES:2027-01-01", "RABIES:2028-01-01"]);
 
     expect(await ctx.prisma.petVisit.count({ where: { petId: target } })).toBe(1);
     expect(await ctx.prisma.petVisit.count({ where: { petId: source } })).toBe(0);
     expect((await ctx.prisma.media.findUniqueOrThrow({ where: { id: m.id } })).petId).toBe(target);
     expect(await ctx.prisma.petVaccine.count({ where: { petId: source } })).toBe(0);
-    expect(await ctx.prisma.petVaccine.count({ where: { petId: target } })).toBe(2);
+    expect(await ctx.prisma.petVaccine.count({ where: { petId: target } })).toBe(3);
 
     const src = await ctx.prisma.pet.findUniqueOrThrow({ where: { id: source } });
     expect(src.deletedAt).not.toBeNull();
@@ -99,21 +99,47 @@ describe("staff pet merge", () => {
     expect(audit.entityId).toBe(target);
     expect(audit.actorType).toBe("STAFF");
     const after = audit.after as Record<string, unknown>;
-    expect(after).toMatchObject({ sourcePetId: source, movedVisits: 1, movedMedia: 1, movedVaccines: 2, droppedVaccines: 1 });
+    expect(after).toMatchObject({ sourcePetId: source, movedVisits: 1, movedMedia: 1, movedVaccines: 2, droppedVaccines: [] });
     expect(after.filledFields).toEqual(expect.arrayContaining(["coatType", "medicalNotes", "vetName"]));
     expect(after.filledFields).not.toContain("name");
     expect(JSON.stringify(audit)).not.toContain("Hip dysplasia");
   });
 
-  it("a verified duplicate vaccine wins a tie on expiry", async () => {
-    await ctx.prisma.petVaccine.create({ data: { organizationId: f.orgId, petId: target, type: "RABIES", expiresOn: new Date("2027-01-01") } });
+  it("vaccine history with different expiries is all kept on the target", async () => {
+    await ctx.prisma.petVaccine.createMany({
+      data: [
+        { organizationId: f.orgId, petId: target, type: "RABIES", expiresOn: new Date("2025-01-01") },
+        { organizationId: f.orgId, petId: target, type: "RABIES", expiresOn: new Date("2027-01-01") },
+        { organizationId: f.orgId, petId: source, type: "RABIES", expiresOn: new Date("2026-01-01") },
+      ],
+    });
+    const res = await merge(source, target, owner);
+    expect(res.status).toBe(200);
+    expect(res.body.vaccines.map((v: { expiresOn: string }) => v.expiresOn)).toEqual(["2025-01-01", "2026-01-01", "2027-01-01"]);
+    expect(await ctx.prisma.petVaccine.count({ where: { petId: target } })).toBe(3);
+    const audit = await ctx.prisma.auditLog.findFirstOrThrow({ where: { organizationId: f.orgId, action: "pet.merge" } });
+    expect(audit.after).toMatchObject({ movedVaccines: 1, droppedVaccines: [] });
+  });
+
+  it("an exact duplicate keeps the verified row, takes the dropped row's card, and audits the dropped row", async () => {
+    const card = await media(target, "VACCINE_CARD");
+    const unverified = await ctx.prisma.petVaccine.create({
+      data: { organizationId: f.orgId, petId: target, type: "RABIES", expiresOn: new Date("2027-01-01"), cardMediaId: card.id },
+    });
+    const verifiedAt = new Date("2026-11-01T12:00:00.000Z");
     const verified = await ctx.prisma.petVaccine.create({
-      data: { organizationId: f.orgId, petId: source, type: "RABIES", expiresOn: new Date("2027-01-01"), verifiedAt: new Date(), verifiedByStaffId: f.staffA },
+      data: { organizationId: f.orgId, petId: source, type: "RABIES", expiresOn: new Date("2027-01-01"), verifiedAt, verifiedByStaffId: f.staffA },
     });
     const res = await merge(source, target, owner);
     expect(res.status).toBe(200);
     expect(res.body.vaccines).toHaveLength(1);
-    expect(res.body.vaccines[0]).toMatchObject({ id: verified.id, verified: true });
+    expect(res.body.vaccines[0]).toMatchObject({ id: verified.id, verified: true, cardMediaId: card.id });
+    expect(await ctx.prisma.petVaccine.findUnique({ where: { id: unverified.id } })).toBeNull();
+    const audit = await ctx.prisma.auditLog.findFirstOrThrow({ where: { organizationId: f.orgId, action: "pet.merge" } });
+    expect(audit.after).toMatchObject({
+      movedVaccines: 1,
+      droppedVaccines: [{ id: unverified.id, type: "RABIES", expiresOn: "2027-01-01", verifiedAt: null, cardMediaId: card.id }],
+    });
   });
 
   it("rejects invalid merges with 409 PET_MERGE_INVALID, unknown or foreign pets with 404, EMPLOYEE with 403", async () => {

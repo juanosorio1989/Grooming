@@ -19,12 +19,42 @@ export function isTxConflict(err: unknown): boolean {
 
 const isBlank = (v: unknown) => v === null || v === undefined || v === "";
 
-/** Winner of two same-type vaccines: later expiry, then verified, then the first argument (the target's). */
-function better(a: PetVaccine, b: PetVaccine): PetVaccine {
-  const diff = a.expiresOn.getTime() - b.expiresOn.getTime();
-  if (diff !== 0) return diff > 0 ? a : b;
-  if ((a.verifiedAt !== null) !== (b.verifiedAt !== null)) return a.verifiedAt !== null ? a : b;
-  return a;
+/** Audit snapshot of a vaccine row the merge deleted. */
+export interface DroppedVaccine {
+  id: string;
+  type: PetVaccine["type"];
+  expiresOn: string;
+  verifiedAt: string | null;
+  cardMediaId: string | null;
+}
+
+export interface VaccineDedupePlan {
+  /** Rows to delete (one per exact-duplicate pair). */
+  drop: PetVaccine[];
+  /** Kept rows that take the dropped row's card because they had none. */
+  cardCopies: { id: string; cardMediaId: string }[];
+}
+
+const vaccineKey = (v: PetVaccine) => `${v.type}|${v.expiresOn.toISOString().slice(0, 10)}`;
+
+/**
+ * Pairs each source vaccine with at most one target vaccine of the same `type` AND `expiresOn` (exact duplicate).
+ * The verified row of a pair survives; when both or neither are verified the target's survives. Rows that differ in
+ * `expiresOn` are history and are never paired.
+ */
+export function planVaccineDedupe(target: PetVaccine[], source: PetVaccine[]): VaccineDedupePlan {
+  const pool = new Map<string, PetVaccine[]>();
+  for (const t of target) pool.set(vaccineKey(t), [...(pool.get(vaccineKey(t)) ?? []), t]);
+  const plan: VaccineDedupePlan = { drop: [], cardCopies: [] };
+  for (const s of source) {
+    const t = pool.get(vaccineKey(s))?.shift();
+    if (!t) continue;
+    const keepSource = s.verifiedAt !== null && t.verifiedAt === null;
+    const [kept, dropped] = keepSource ? [s, t] : [t, s];
+    plan.drop.push(dropped);
+    if (kept.cardMediaId === null && dropped.cardMediaId !== null) plan.cardCopies.push({ id: kept.id, cardMediaId: dropped.cardMediaId });
+  }
+  return plan;
 }
 
 /**
@@ -101,18 +131,20 @@ export class PetMergeService {
     return this.pets.view(merged);
   }
 
-  /** For each vaccine type present on both pets one row survives (see `better`); the rest are deleted. */
-  private async mergeVaccines(tx: Prisma.TransactionClient, source: PetRow, target: PetRow): Promise<{ moved: number; dropped: number }> {
-    const drop: string[] = [];
-    for (const type of new Set(source.vaccines.map((v) => v.type))) {
-      const group = [...target.vaccines, ...source.vaccines].filter((v) => v.type === type);
-      if (!target.vaccines.some((v) => v.type === type)) continue;
-      const winner = group.reduce(better);
-      for (const v of group) if (v.id !== winner.id) drop.push(v.id);
-    }
-    if (drop.length) await tx.petVaccine.deleteMany({ where: { id: { in: drop } } });
+  /** Moves every source vaccine to the target; only exact duplicates are dropped (see `planVaccineDedupe`). */
+  private async mergeVaccines(tx: Prisma.TransactionClient, source: PetRow, target: PetRow): Promise<{ moved: number; dropped: DroppedVaccine[] }> {
+    const plan = planVaccineDedupe(target.vaccines, source.vaccines);
+    if (plan.drop.length) await tx.petVaccine.deleteMany({ where: { id: { in: plan.drop.map((v) => v.id) } } });
+    for (const c of plan.cardCopies) await tx.petVaccine.update({ where: { id: c.id }, data: { cardMediaId: c.cardMediaId } });
     const moved = (await tx.petVaccine.updateMany({ where: { organizationId: source.organizationId, petId: source.id }, data: { petId: target.id } })).count;
-    return { moved, dropped: drop.length };
+    const dropped = plan.drop.map((v) => ({
+      id: v.id,
+      type: v.type,
+      expiresOn: v.expiresOn.toISOString().slice(0, 10),
+      verifiedAt: v.verifiedAt ? v.verifiedAt.toISOString() : null,
+      cardMediaId: v.cardMediaId,
+    }));
+    return { moved, dropped };
   }
 
   /** Target fields that are null or empty take the source value; temperament and allergies are unioned. */

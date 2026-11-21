@@ -47,8 +47,10 @@ Only own, non-deleted pets; anything else is `404`.
    species: `409 PET_MERGE_INVALID` (the `detail` names the rule). A transaction Postgres aborts for a deadlock or
    serialization conflict is also `409 PET_MERGE_INVALID`, never 500.
 2. `pet_visit.pet_id`, `media.pet_id` and `pet_vaccine.pet_id` move to the target. These are the only foreign keys to
-   `pet.id`. For a vaccine type present on both pets one row survives: later `expiresOn`, then verified, then the
-   target's; the others are deleted.
+   `pet.id`. Every source vaccine moves; vaccine rows with a different `expiresOn` are history and all stay. Only an
+   exact duplicate (same `type` AND same `expiresOn`, paired one source row to one target row) is dropped: the verified
+   row survives (both or neither verified: the target's), it takes the dropped row's `cardMediaId` when it has none, and
+   the other row is deleted.
 3. Null or empty target fields take the source value: `breedCode`, `birthDate`, `sex`, `neutered`, `coatType`,
    `medicalNotes` (ciphertext copied as is), `behaviorNotes`, `vetName`, `vetPhone`, `photoMediaId`. When the target has no
    weight, `weightG`, `weightMeasuredAt` and `sizeClass` come from the source together (or just `sizeClass` if the source
@@ -56,7 +58,8 @@ Only own, non-deleted pets; anything else is `404`.
    case-insensitively and the target's spelling wins (`["Chicken"]` + `["chicken","Beef"]` gives `["Chicken","Beef"]`).
 4. The source is soft-deleted (`deletedAt = now`) and disappears from lists.
 5. Audit `pet.merge`, entity `pet`, `entityId` = target, `after = { sourcePetId, movedVisits, movedMedia, movedVaccines,
-   droppedVaccines, filledFields }` (`filledFields` uses `PetView` names, including `temperament` / `allergies` when the
+   droppedVaccines, filledFields }`; `movedVaccines` is a count, `droppedVaccines` lists each deleted row as
+   `{ id, type, expiresOn, verifiedAt, cardMediaId }` (`filledFields` uses `PetView` names, including `temperament` / `allergies` when the
    union added values). No notes text is stored.
 
 ## Audit
