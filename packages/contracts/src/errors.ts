@@ -14,6 +14,9 @@ export const ErrorCode = z.enum([
   "OUTSIDE_CANCEL_WINDOW",
   "CONFLICT",
   "BAD_REQUEST",
+  "STAGE_RESOURCE_MISMATCH",
+  "IN_USE",
+  "PET_MERGE_INVALID",
   "INTERNAL",
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;

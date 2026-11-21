@@ -24,13 +24,19 @@ export async function truncateAll(prisma: PrismaClient): Promise<void> {
  * exclusion (23P01) or check (23514) violations to a P-code: it throws
  * PrismaClientUnknownRequestError with no `meta`/`cause`, and the SQLSTATE
  * appears only in the message as `code: "23P01"`. `meta.code` / `cause.code`
- * are checked first in case a future Prisma version exposes them.
+ * are checked first in case a future Prisma version exposes them. With
+ * `constraint`, a P2002 only counts when `meta.target` contains that name.
  */
-export function pgCode(err: unknown): string | undefined {
+export function pgCode(err: unknown, constraint?: string): string | undefined {
   if (typeof err !== "object" || err === null) return undefined;
   const e = err as { code?: unknown; meta?: Record<string, unknown>; cause?: { code?: unknown }; message?: string };
   // Prisma maps unique violations (23505) to P2002 and drops the SQLSTATE.
-  if (e.code === "P2002") return "23505";
+  if (e.code === "P2002") {
+    if (constraint === undefined) return "23505";
+    const target = e.meta?.target;
+    const names = Array.isArray(target) ? target.map(String) : typeof target === "string" ? [target] : [];
+    return names.includes(constraint) ? "23505" : undefined;
+  }
   const metaCode = e.meta?.code;
   if (typeof metaCode === "string" && /^[0-9A-Z]{5}$/.test(metaCode)) return metaCode;
   const causeCode = e.cause?.code;
@@ -38,11 +44,11 @@ export function pgCode(err: unknown): string | undefined {
   return /code: "([0-9A-Z]{5})"/.exec(e.message ?? "")?.[1];
 }
 
-export async function rejectionCode(promise: Promise<unknown>): Promise<string | undefined> {
+export async function rejectionCode(promise: Promise<unknown>, constraint?: string): Promise<string | undefined> {
   try {
     await promise;
   } catch (err) {
-    return pgCode(err) ?? `unrecognized: ${(err as Error).message}`;
+    return pgCode(err, constraint) ?? `unrecognized: ${(err as Error).message}`;
   }
   return undefined;
 }
@@ -184,7 +190,7 @@ export function bookSegment(prisma: PrismaClient, f: Fixture, s: SegmentInput) {
         endsAt,
         blockEndsAt: s.blockEndsAt ? at(s.blockEndsAt) : endsAt,
         durationMin: Math.round((endsAt.getTime() - startsAt.getTime()) / 60_000),
-        priceCents: 4000,
+        priceCents: (s.stage ?? "BATH") === "KENNEL" ? 0 : 4000,
         occupies: s.occupies ?? true,
       },
     });

@@ -4,6 +4,7 @@ import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
 import { ZodValidationPipe, cleanupOpenApiDoc } from "nestjs-zod";
+import { AUTH_HEADERS } from "@grooming/contracts";
 import { ProblemFilter } from "./common/problem.filter.js";
 import type { Env } from "./config/env.js";
 
@@ -17,7 +18,7 @@ export async function configureApp(app: INestApplication, env: Env): Promise<voi
   app.enableCors({
     origin: [env.WEB_ORIGIN],
     credentials: true,
-    allowedHeaders: ["authorization", "content-type", "x-grooming-csrf"],
+    allowedHeaders: ["authorization", "content-type", AUTH_HEADERS.csrf],
   });
   app.useGlobalPipes(new ZodValidationPipe());
   app.useGlobalFilters(new ProblemFilter());

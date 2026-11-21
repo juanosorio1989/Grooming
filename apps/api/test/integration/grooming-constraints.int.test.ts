@@ -99,7 +99,7 @@ describe("offline idempotency keys", () => {
       prisma.visitStep.create({ data: { organizationId: orgId, petVisitId, stage: "BATH", sort: 1, clientRef: "r1" } });
 
     await step(f.orgId, visitA.id);
-    expect(await rejectionCode(step(f.orgId, visitA.id))).toBe("23505");
+    expect(await rejectionCode(step(f.orgId, visitA.id), "client_ref")).toBe("23505");
     await step(other.orgId, visitB.id);
     expect(await prisma.visitStep.count({ where: { clientRef: "r1" } })).toBe(2);
   });

@@ -66,3 +66,14 @@ describe("defaultGenerators: local S3 keys", () => {
     expect(text).toContain("S3_SECRET_ACCESS_KEY=keepsecret\n");
   });
 });
+
+describe("addMissingSecrets with the real generators", () => {
+  it("fills empty S3 lines with alphanumeric keys of 20 and 40 chars", () => {
+    const { text, added } = addMissingSecrets("S3_ACCESS_KEY_ID=\nS3_SECRET_ACCESS_KEY=\n", {
+      S3_ACCESS_KEY_ID: defaultGenerators().S3_ACCESS_KEY_ID!,
+      S3_SECRET_ACCESS_KEY: defaultGenerators().S3_SECRET_ACCESS_KEY!,
+    });
+    expect(added).toEqual(["S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY"]);
+    expect(text).toMatch(/^S3_ACCESS_KEY_ID=[A-Za-z0-9]{20}\nS3_SECRET_ACCESS_KEY=[A-Za-z0-9]{40}\n$/);
+  });
+});

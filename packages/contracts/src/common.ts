@@ -26,3 +26,14 @@ export type IsoDate = z.infer<typeof IsoDateSchema>;
 
 export const IsoInstantSchema = z.string().datetime({ offset: true });
 export type IsoInstant = z.infer<typeof IsoInstantSchema>;
+
+/** `"HH:MM"` 24 h; `"24:00"` is allowed as an end time only (stored as `00:00`). */
+export const WallTimeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$|^24:00$/);
+export type WallTime = z.infer<typeof WallTimeSchema>;
+
+/** A same-day range: `from < to`, `from` never `"24:00"`. Zero-padded strings compare lexicographically. */
+export const WallRangeSchema = z
+  .object({ from: WallTimeSchema, to: WallTimeSchema })
+  .strict()
+  .refine((r) => r.from !== "24:00" && r.from < r.to, "from must be before to");
+export type WallRange = z.infer<typeof WallRangeSchema>;
