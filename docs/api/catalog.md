@@ -19,7 +19,7 @@ allow RECEPTION and EMPLOYEE. A row of another organization is 404.
 | `GET /services?includeInactive=` | `ServiceView[]` (service fields plus `id`, `active`, `prices`); inactive hidden by default |
 | `GET /services/:id` | one `ServiceView` |
 | `POST /services` | `{ categoryId?, name, description?, species, stage, isMain, resourceTypeId?, requiredSkill, bookingMode?, bufferAfterMin 0..120, onlineBookable }` -> 201; audit `service.create` |
-| `PATCH /services/:id` | any subset plus `active`; audit `service.update` |
+| `PATCH /services/:id` | any subset plus `active`; audit `service.update`. Changing `requiredSkill` is `400 VALIDATION_FAILED` while an employee assigned to the service lacks the new skill (update their services first). |
 | `DELETE /services/:id` | sets `active = false`, 204; audit `service.deactivate` |
 
 `resourceTypeId` must reference a `STATION` type of the organization (a `KENNEL` type is 400, unknown id 404).

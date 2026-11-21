@@ -26,7 +26,7 @@ Only own, non-deleted pets; anything else is `404`.
 
 | Route | Roles | Notes |
 |---|---|---|
-| `GET /staff/pets?customerId=&q=` | OWNER, RECEPTION, EMPLOYEE | `q` matches name or breed. EMPLOYEE: only pets with a non-cancelled segment assigned to them within the location's local day. |
+| `GET /staff/pets?customerId=&q=` | OWNER, RECEPTION, EMPLOYEE | `q` matches name or breed. EMPLOYEE: only pets with a non-cancelled segment assigned to them within the location's local day. Returns at most 100 pets. |
 | `POST /staff/pets` | OWNER, RECEPTION | `{ customerId, ...PetInput }`; unknown customer 404; 20-pet cap applies. |
 | `GET /staff/pets/:id` | OWNER, RECEPTION, EMPLOYEE | EMPLOYEE outside the "today" scope gets 404 (not 403). |
 | `PATCH /staff/pets/:id` | OWNER, RECEPTION | Partial `PetInput`. |

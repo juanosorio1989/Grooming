@@ -1,6 +1,6 @@
 # Handoff
 
-Last update: 2026-11-20 · Plan 02 merged; owner Google sign-in added to spec; Plan 03 written; next: execute Plan 03
+Last update: 2026-11-21 · Plan 03 done on branch, merging
 
 ## Done
 
@@ -8,12 +8,12 @@ Last update: 2026-11-20 · Plan 02 merged; owner Google sign-in added to spec; P
 - Plan 02 merged to `main`: `pricing`, `tracking` and the grooming `availability` planner
   (`docs/superpowers/plans/2026-11-18-mvp/02-domain-packages.md`). The final review fix wave
   (`513b997` kennel backtracking, `aea04fa` skip-ahead clamp) passed a scoped re-review.
+- Plan 03 done on branch `feat/mvp-03-catalog` (catalog, staff, pets, public reads, audit reader, seed; final
+  review fix wave applied), merging.
 
 ## Next
 
-- Execute Plan 03 (`docs/superpowers/plans/2026-11-18-mvp/03-catalog-staff-pets.md`) on branch
-  `feat/mvp-03-catalog`, subagent-driven; the owner approved the plan and routing 2026-11-20.
-  Check the plan's checkboxes and `git log` for the current task.
+- Write Plan 04 (booking API) in detail.
 
 ## Spec change 2026-11-20
 
@@ -29,16 +29,6 @@ Last update: 2026-11-20 · Plan 02 merged; owner Google sign-in added to spec; P
 
 ## Carry-over for later plans
 
-- Plan 03:
-  - catalog DTOs: `durationMin >= 1` (or a DB CHECK);
-  - size thresholds are whole lb and strictly increasing;
-  - existing cleanup:
-    - `secrets:gen` test with real generators on empty S3 lines;
-    - CORS should use `AUTH_HEADERS.csrf`;
-    - `pgCode` should assert `meta.target`;
-    - kennel fixture `priceCents: 0`;
-    - assert the `service_price_any_coat` `indexdef`;
-    - turbo `test:int` `passThroughEnv` should add `REDIS_URL_TEST` and `DEFAULT_ORG_SLUG`.
 - Plan 04:
   - cap the `/availability` date range (worst-case search is about 0.4–0.7 s per date) or add a precheck;
   - DTOs validate integer ms (NaN makes `validatePlan` throw);
@@ -46,7 +36,15 @@ Last update: 2026-11-20 · Plan 02 merged; owner Google sign-in added to spec; P
   - kennel holds past local midnight (STAFF late drop-off);
   - exclude the hold's own segments from `busy`;
   - test two concurrent holds on the last kennel → one `SLOT_TAKEN`;
-  - `pet_visit.pet_id` is nullable while a hold carries a new pet; set it on confirm.
+  - `pet_visit.pet_id` is nullable while a hold carries a new pet; set it on confirm;
+  - booking/hold writers reject deleted pets (an insert racing a merge can land on the soft-deleted source); also reject pets of soft-deleted customers;
+  - `DELETE /me` soft-deletes the customer's pets and scrubs name/phone/email from `customer.*` audit before/after;
+  - EMPLOYEE pet scope ignores a cancelled `pet_visit` inside a non-cancelled appointment; revisit with per-pet cancel;
+  - org provisioning must write settings that pass `LocationSettingsSchema` (invalid stored settings make PATCH 500);
+  - any future role-changing path (CLI/admin) must reuse the last-login-capable-owner guard;
+  - deactivating a service/resource/employee with future bookings has no warning yet;
+  - staff vaccine edit keeps the original verifier stamp (decide: re-stamp or clear);
+  - location settings cache TTL is 30 s across processes.
 - Plan 05:
   - load steps ordered by `sort` (`validateSteps` requires index == sort);
   - audit the skip reason;

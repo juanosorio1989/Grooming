@@ -1,6 +1,6 @@
 # Plan 03 — Catalog, Staff and Pets API
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** The data the booking engine needs, editable through the API:
 location settings and hours, stations and kennels, services with the
@@ -96,15 +96,15 @@ gets its own Opus implementer and review).
   - Test helper `apps/api/test/integration/tokens.ts`: `staffToken(app: INestApplication, opts: { sub: string; org: string; role: StaffRole }): Promise<string>` and `customerToken(app, opts: { sub: string; org: string }): Promise<string>`, both through `TokenService.issueAccess`.
   - `GET /v1/staff/audit?entity=&entityId=&limit=&before=` (OWNER) → `{ items: AuditItem[]; nextBefore: string | null }`; `AuditItem = { id, at, actorType, actorId, action, entity, entityId, before, after }` (no `ip`). `limit` 1..100, default 50; `before` is an ISO instant; order `at desc, id desc`.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   - `wall-time.test.ts`: `wallToDbTime("24:00")` equals `new Date("1970-01-01T00:00:00Z")`; `dbTimeToWall(new Date("1970-01-01T00:00:00Z"), true) === "24:00"` and with `false` `=== "00:00"`; round-trip `"08:30"`; `WallTimeSchema` rejects `"24:01"`, `"7:00"`, `"12:60"`; `WallRangeSchema` rejects `{from:"10:00",to:"10:00"}` and `{from:"24:00",to:"24:00"}`.
   - `audit.int.test.ts`: OWNER gets items newest first; `entity=service&entityId=<id>` filters; `limit=1` returns `nextBefore` and the next page continues without repeats; RECEPTION → 403; no token → 401; items never contain `ip`.
   - `schema-integrity.int.test.ts`: the `pg_indexes.indexdef` of `service_price_any_coat` contains `UNIQUE`, `(service_id, size_class)` and `WHERE (coat_type IS NULL)`.
   - `secrets.test.ts`: `secrets:gen` run through its real generator functions on input `"S3_ACCESS_KEY_ID=\nS3_SECRET_ACCESS_KEY=\n"` fills both (20 and 40 alphanumeric chars).
-- [ ] **Step 2: Run** `pnpm --filter @grooming/api test && pnpm --filter @grooming/api test:int` — new tests FAIL.
-- [ ] **Step 3: Implement** the interfaces above and the cleanup items. `AuditController` uses `@StaffAuth("OWNER")`. `pgCode(err, constraint?)`: when `constraint` is given and the error is P2002, also check `meta.target` contains it (array or string), else return `undefined`; update existing callers that check a specific unique to pass it.
-- [ ] **Step 4: Run** the Step 2 command plus `pnpm turbo run lint typecheck test build` — all PASS.
-- [ ] **Step 5: Commit** `feat(api): default location, wall times, audit reader; plan 02 carry-over cleanup`.
+- [x] **Step 2: Run** `pnpm --filter @grooming/api test && pnpm --filter @grooming/api test:int` — new tests FAIL.
+- [x] **Step 3: Implement** the interfaces above and the cleanup items. `AuditController` uses `@StaffAuth("OWNER")`. `pgCode(err, constraint?)`: when `constraint` is given and the error is P2002, also check `meta.target` contains it (array or string), else return `undefined`; update existing callers that check a specific unique to pass it.
+- [x] **Step 4: Run** the Step 2 command plus `pnpm turbo run lint typecheck test build` — all PASS.
+- [x] **Step 5: Commit** `feat(api): default location, wall times, audit reader; plan 02 carry-over cleanup`.
 
 ---
 
@@ -129,13 +129,13 @@ gets its own Opus implementer and review).
     - `PUT /staff/settings/hours` `LocationHours[]` → `LocationHours[]` (replaces all). Audit `location_hours.replace`.
     - `GET /staff/closures?from=&to=` (OWNER, RECEPTION), `POST /staff/closures` → `201 { id, ...Closure }`, `DELETE /staff/closures/:id` → 204. Audit `closure.create` / `closure.delete`.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   - `settings.test.ts`: the seed's `LOCATION_SETTINGS` object (copy it as a literal) parses; `sizeThresholdsLb {S:20.5,...}` fails; `{S:50,M:50,L:90}` fails; overlapping `dropOffWindows["1"]` fails; `slotIntervalMin: 7` fails; `requiredVaccines {DOG:["RABIES","RABIES"]}` fails.
   - `settings.int.test.ts`: GET as OWNER and RECEPTION; PATCH as RECEPTION → 403; PATCH `settings.sizeThresholdsLb {S:10,M:40,L:80}` → 200, and a pet with `weightG: 19_000` (fixture pet, M before) now has `sizeClass` `"L"` in the DB, a pet without weight keeps its `sizeClass`; PATCH with `{S:40,M:30,L:80}` → 400 and nothing changes; PATCH writes one `settings.update` audit row; PUT hours with `closes:"24:00"` → stored `00:00`, read back `"24:00"`; PUT hours with two overlapping Monday ranges → 400; closure with `endsAt <= startsAt` → 400; DELETE closure of another org → 404.
-- [ ] **Step 2: Run** `pnpm --filter @grooming/contracts test && pnpm --filter @grooming/api test:int -- settings` — FAIL.
-- [ ] **Step 3: Implement.** The threshold re-derive runs inside the PATCH transaction: load `{ id, weightG }` of non-deleted pets with `weightG not null` in the org, compute `sizeClassFromWeight(weightG, newThresholds)`, update only rows whose class changes. Call `LocationService.invalidate()` after commit.
-- [ ] **Step 4: Run** Step 2 command and the global checks — PASS.
-- [ ] **Step 5: Commit** `feat(api): location settings, hours and closures`.
+- [x] **Step 2: Run** `pnpm --filter @grooming/contracts test && pnpm --filter @grooming/api test:int -- settings` — FAIL.
+- [x] **Step 3: Implement.** The threshold re-derive runs inside the PATCH transaction: load `{ id, weightG }` of non-deleted pets with `weightG not null` in the org, compute `sizeClassFromWeight(weightG, newThresholds)`, update only rows whose class changes. Call `LocationService.invalidate()` after commit.
+- [x] **Step 4: Run** Step 2 command and the global checks — PASS.
+- [x] **Step 5: Commit** `feat(api): location settings, hours and closures`.
 
 ---
 
@@ -151,11 +151,11 @@ gets its own Opus implementer and review).
   - `ResourceTypeSchema = { name: LocalizedText, kind: "STATION" | "KENNEL" }`; `GET /staff/resource-types` → `{ id, name, kind, resourceCount }[]`; `POST` → 201; `PATCH /:id` (`name` only; `kind` is immutable → 400 if sent); `DELETE /:id` → 204, or `409 IN_USE` when any resource or service references it. Audit `resource_type.create|update|delete`.
   - `ResourceSchema = { resourceTypeId: Id, name: string (1..60) }`; `GET /staff/resources?kind=&includeInactive=` → `{ id, name, resourceTypeId, kind, active }[]` ordered by type then name; `POST` → 201 (location = default location); `PATCH /:id` `{ name?, active? }`; `DELETE /:id` → sets `active=false`, 204. Name unique per location among active resources → `409 CONFLICT`. Audit `resource.create|update|deactivate`.
 
-- [ ] **Step 1: Write failing tests** — create type + two resources; list filtered by `kind=KENNEL`; PATCH `kind` → 400; delete a type with resources → 409 `IN_USE`; delete an unused type → 204; deactivated resource hidden from the default list and shown with `includeInactive=true`; duplicate active name → 409; EMPLOYEE POST → 403; resource of another org → 404.
-- [ ] **Step 2: Run** `pnpm --filter @grooming/api test:int -- resources` — FAIL.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run** Step 2 command and global checks — PASS.
-- [ ] **Step 5: Commit** `feat(api): resource types and resources`.
+- [x] **Step 1: Write failing tests** — create type + two resources; list filtered by `kind=KENNEL`; PATCH `kind` → 400; delete a type with resources → 409 `IN_USE`; delete an unused type → 204; deactivated resource hidden from the default list and shown with `includeInactive=true`; duplicate active name → 409; EMPLOYEE POST → 403; resource of another org → 404.
+- [x] **Step 2: Run** `pnpm --filter @grooming/api test:int -- resources` — FAIL.
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run** Step 2 command and global checks — PASS.
+- [x] **Step 5: Commit** `feat(api): resource types and resources`.
 
 ---
 
@@ -176,13 +176,13 @@ gets its own Opus implementer and review).
   - `checkStageRule(candidate: StageRuleService, others: StageRuleService[]): string | null` in `stage-rule.ts`, where `StageRuleService = { id, stage, species, resourceTypeId: string | null }` — returns the id of the first **active** other service that conflicts, else null. Two services conflict when they have the same `stage`, compatible species (equal, or either is `ANY`) and different `resourceTypeId` (null counts as a value). Create/PATCH that would make the candidate conflict → `409 STAGE_RESOURCE_MISMATCH` with `detail` naming the other service id.
   - `resourceTypeId` must reference a `STATION` type of this org (a `KENNEL` type → 400).
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   - `stage-rule.test.ts`: same stage + DOG/DOG + different types → conflict; DOG vs CAT → none; DOG vs ANY → conflict; different stages → none; null vs type → conflict; null vs null → none; inactive other → none.
   - `catalog.int.test.ts`: create service + PUT matrix with 8 rows → GET returns them; PUT with `durationMin: 0` → 400 and the old rows remain; PUT with duplicate `(M, null)` → 400; PUT `[]` clears the matrix; second BATH DOG service on a different resource type → 409 `STAGE_RESOURCE_MISMATCH`; a KENNEL `resourceTypeId` → 400; deactivate → hidden from the default list; RECEPTION POST → 403; EMPLOYEE GET → 200; each mutation writes its audit row.
-- [ ] **Step 2: Run** `pnpm --filter @grooming/api test && pnpm --filter @grooming/api test:int -- catalog` — FAIL.
-- [ ] **Step 3: Implement.** Run `checkStageRule` against the org's active services excluding the candidate itself, inside the write transaction.
-- [ ] **Step 4: Run** Step 2 command and global checks — PASS.
-- [ ] **Step 5: Commit** `feat(api): categories, services and price matrix`.
+- [x] **Step 2: Run** `pnpm --filter @grooming/api test && pnpm --filter @grooming/api test:int -- catalog` — FAIL.
+- [x] **Step 3: Implement.** Run `checkStageRule` against the org's active services excluding the candidate itself, inside the write transaction.
+- [x] **Step 4: Run** Step 2 command and global checks — PASS.
+- [x] **Step 5: Commit** `feat(api): categories, services and price matrix`.
 
 ---
 
@@ -203,13 +203,13 @@ gets its own Opus implementer and review).
   - `GET|PUT /staff/employees/:id/working-hours` body/response `{ weekday, start: WallTime, end: WallTime }[]` (max 21) for the default location; overlapping ranges on one weekday → 400. EMPLOYEE may GET their own. Audit `working_hours.replace`.
   - `TimeOffSchema = { staffUserId: Id, startsAt: IsoInstant, endsAt: IsoInstant, kind: TimeOffKind, note?: string max 200 }`; `GET /staff/time-off?staffUserId=&from=&to=` (OWNER, RECEPTION; EMPLOYEE only own — other `staffUserId` → 403), `POST` (OWNER, RECEPTION) → 201, `PATCH|DELETE /staff/time-off/:id` (OWNER, RECEPTION). Audit `time_off.create|update|delete`.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   - `employees.int.test.ts`: create a groomer → profile, staff_location, `canLogin false`; duplicate email → 409; PUT services with a GROOMER service for a BATHER-only person → 400; PUT working hours with `end:"24:00"` round-trips; overlapping Monday ranges → 400; role change revokes the person's refresh tokens (a refresh token created before the change is rejected on `POST /v1/auth/refresh`); the only OWNER PATCHes self `role:"RECEPTION"` → 409, and `active:false` → 409; with a second active OWNER it succeeds; EMPLOYEE GET list has no `email`; RECEPTION POST → 403.
   - `time-off.int.test.ts`: RECEPTION creates for staffB; EMPLOYEE lists own → 200, lists staffB's → 403; `endsAt <= startsAt` → 400; other-org id → 404.
-- [ ] **Step 2: Run** `pnpm --filter @grooming/api test:int -- staff` — FAIL.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run** Step 2 command and global checks — PASS.
-- [ ] **Step 5: Commit** `feat(api): employees, working hours and time off`.
+- [x] **Step 2: Run** `pnpm --filter @grooming/api test:int -- staff` — FAIL.
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run** Step 2 command and global checks — PASS.
+- [x] **Step 5: Commit** `feat(api): employees, working hours and time off`.
 
 ---
 
@@ -228,11 +228,11 @@ gets its own Opus implementer and review).
   - `GET|PATCH /staff/customers/:id` (PATCH OWNER, RECEPTION; fields `name, email, locale, emergencyPhone, privateNotes`). Phone is not editable here. Audit `customer.update` (private notes as `privateNotesChanged`).
   - `GET /me`, `PATCH /me` (`CustomerAuth`) `{ name?, email?, locale?, emergencyPhone? }` → `CustomerView` without private notes. Audit `customer.update` with `actorType: "CUSTOMER"`. (Plan 04 adds `identities`, Plan 06 adds consents.)
 
-- [ ] **Step 1: Write failing tests** — search by `"ana"` and by `"0100"` finds the fixture customer; EMPLOYEE search without a nearby segment → `[]`, with one → found; duplicate phone → 409 with the existing id; PATCH `privateNotes` stores `*_enc` (column value is not the plain text) and GET returns the plain text to OWNER; `/me` PATCH changes `locale`; `/me` with a staff token → 403; GET `/me` for a customer whose `deletedAt` is set → 404.
-- [ ] **Step 2: Run** `pnpm --filter @grooming/api test:int -- customers` — FAIL.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run** Step 2 command and global checks — PASS.
-- [ ] **Step 5: Commit** `feat(api): staff customers and owner profile`.
+- [x] **Step 1: Write failing tests** — search by `"ana"` and by `"0100"` finds the fixture customer; EMPLOYEE search without a nearby segment → `[]`, with one → found; duplicate phone → 409 with the existing id; PATCH `privateNotes` stores `*_enc` (column value is not the plain text) and GET returns the plain text to OWNER; `/me` PATCH changes `locale`; `/me` with a staff token → 403; GET `/me` for a customer whose `deletedAt` is set → 404.
+- [x] **Step 2: Run** `pnpm --filter @grooming/api test:int -- customers` — FAIL.
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run** Step 2 command and global checks — PASS.
+- [x] **Step 5: Commit** `feat(api): staff customers and owner profile`.
 
 ---
 
@@ -253,13 +253,13 @@ gets its own Opus implementer and review).
   - Staff: `GET /staff/pets?customerId=&q=` (OWNER, RECEPTION: any; EMPLOYEE: only pets with a segment assigned to them today), `POST /staff/pets` `{ customerId, ...PetInput }` (OWNER, RECEPTION), `GET /staff/pets/:id` (EMPLOYEE: same scope, else 404), `PATCH /staff/pets/:id` (OWNER, RECEPTION), `GET|POST /staff/pets/:id/vaccines`, `PATCH|DELETE .../vaccines/:vid` (OWNER, RECEPTION), `POST /staff/pets/:id/vaccines/:vid/verify` (OWNER, RECEPTION) → sets `verifiedAt = now`, `verifiedByStaffId`. Audit `pet_vaccine.verify` plus the create/update/delete names above.
   - `PetAccessService.employeeCanSee(staffId: string, petId: string, now: Date): Promise<boolean>` — true when an `appointment_segment` with `staffUserId = staffId` whose `petVisit.petId = petId` starts within the location's local day of `now` (`localDayBoundsUtc(todayIn(tz, now), tz)`) and the appointment status is not `CANCELLED`.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   - `me-pets.int.test.ts`: create with `weightG: 19_000` → `sizeClass "M"` (default thresholds); create with no weight and `sizeClass "XL"` → stored XL; create with both → derived wins; GET another customer's pet → 404; PATCH it → 404; 21st pet → 409; DELETE hides it from the list; `medicalNotes` round-trip and the DB column `medical_notes_enc` is not the plain text; owner edits a verified vaccine → `verified false`; audit rows have `medicalNotesChanged` and never the notes text.
   - `staff-pets.int.test.ts`: RECEPTION creates for the fixture customer; EMPLOYEE (staffA) without a segment today → list `[]`, GET → 404; after inserting a segment for staffA starting `now` on a visit of that pet → GET 200 with decrypted `medicalNotes`; a segment yesterday does not count; a `CANCELLED` appointment does not count; verify sets `verified true` and `pet_vaccine.verify` audit; EMPLOYEE PATCH → 403.
-- [ ] **Step 2: Run** `pnpm --filter @grooming/api test:int -- pets` — FAIL.
-- [ ] **Step 3: Implement.** Segments for the "today" tests are inserted directly with Prisma at `new Date()` (the fixed-date `bookSegment` helper cannot express "today").
-- [ ] **Step 4: Run** Step 2 command and global checks — PASS.
-- [ ] **Step 5: Commit** `feat(api): pets and vaccines for owners and staff`.
+- [x] **Step 2: Run** `pnpm --filter @grooming/api test:int -- pets` — FAIL.
+- [x] **Step 3: Implement.** Segments for the "today" tests are inserted directly with Prisma at `new Date()` (the fixed-date `bookSegment` helper cannot express "today").
+- [x] **Step 4: Run** Step 2 command and global checks — PASS.
+- [x] **Step 5: Commit** `feat(api): pets and vaccines for owners and staff`.
 
 ---
 
@@ -281,11 +281,11 @@ Rules (all in one transaction, `SERIALIZABLE` or row locks with `SELECT ... FOR 
 4. Soft-delete the source (`deletedAt = now`).
 5. Audit `pet.merge`, entity `pet`, `entityId` = target id, `after = { sourcePetId, movedVisits, movedMedia, movedVaccines, droppedVaccines, filledFields: string[] }`.
 
-- [ ] **Step 1: Write failing tests** — merge moves one visit, one media row and a non-duplicate vaccine; duplicate RABIES keeps the later expiry; target null `coatType` filled from source, target non-null `name` untouched; allergies `["Chicken"]` + `["chicken","Beef"]` → `["Chicken","Beef"]`; source is soft-deleted and gone from `/staff/pets`; different customers → 409 `PET_MERGE_INVALID`; same id → 409; DOG into CAT → 409; EMPLOYEE → 403; two concurrent merges of A→B and B→A: exactly one succeeds, the other gets 409, and no visit is lost (count of visits across both pets unchanged).
-- [ ] **Step 2: Run** `pnpm --filter @grooming/api test:int -- pet-merge` — FAIL.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run** Step 2 command and global checks — PASS.
-- [ ] **Step 5: Commit** `feat(api): merge duplicate pets`.
+- [x] **Step 1: Write failing tests** — merge moves one visit, one media row and a non-duplicate vaccine; duplicate RABIES keeps the later expiry; target null `coatType` filled from source, target non-null `name` untouched; allergies `["Chicken"]` + `["chicken","Beef"]` → `["Chicken","Beef"]`; source is soft-deleted and gone from `/staff/pets`; different customers → 409 `PET_MERGE_INVALID`; same id → 409; DOG into CAT → 409; EMPLOYEE → 403; two concurrent merges of A→B and B→A: exactly one succeeds, the other gets 409, and no visit is lost (count of visits across both pets unchanged).
+- [x] **Step 2: Run** `pnpm --filter @grooming/api test:int -- pet-merge` — FAIL.
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run** Step 2 command and global checks — PASS.
+- [x] **Step 5: Commit** `feat(api): merge duplicate pets`.
 
 ---
 
@@ -303,13 +303,13 @@ Rules (all in one transaction, `SERIALIZABLE` or row locks with `SELECT ... FOR 
   - `GET /public/employees` → active staff with an `employee_profile`, `bookableOnline = true` and at least one skill: `[{ id, displayName, bio, photoUrl, skills, serviceIds }]` (no email, role or schedule).
   - `GET /public/breeds?species=` → `[{ code, species, en, es, defaultCoat: CoatType | null }]` from `breeds.json` (~40 dog breeds, ~12 cat breeds; `code` kebab-case, unique), sorted by `en`; header `Cache-Control: public, max-age=86400`.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   - `breeds.test.ts`: codes unique and kebab-case; every `species` is `DOG|CAT`; every `defaultCoat` is a `CoatType` or null; at least 40 DOG and 12 CAT; includes `poodle`, `golden-retriever`, `shih-tzu`, `domestic-shorthair`.
   - `public.int.test.ts`: an inactive service and a non-online service are absent; prices are included; an employee with `bookableOnline:false` is absent and no response contains `email`; `?species=CAT` returns only cats; the cache header is set; no token needed.
-- [ ] **Step 2: Run** `pnpm --filter @grooming/api test && pnpm --filter @grooming/api test:int -- public` — FAIL.
-- [ ] **Step 3: Implement.** `breeds.json` is imported with `resolveJsonModule` (add to `apps/api/tsconfig.json` if missing) and copied by `nest build` (`assets` in `nest-cli.json` or a TS import, whichever the build already supports; verify `pnpm --filter @grooming/api build` output contains it).
-- [ ] **Step 4: Run** Step 2 command and global checks — PASS.
-- [ ] **Step 5: Commit** `feat(api): public locations, services, employees and breeds`.
+- [x] **Step 2: Run** `pnpm --filter @grooming/api test && pnpm --filter @grooming/api test:int -- public` — FAIL.
+- [x] **Step 3: Implement.** `breeds.json` is imported with `resolveJsonModule` (add to `apps/api/tsconfig.json` if missing) and copied by `nest build` (`assets` in `nest-cli.json` or a TS import, whichever the build already supports; verify `pnpm --filter @grooming/api build` output contains it).
+- [x] **Step 4: Run** Step 2 command and global checks — PASS.
+- [x] **Step 5: Commit** `feat(api): public locations, services, employees and breeds`.
 
 ---
 
@@ -332,11 +332,11 @@ Seed content (from `security-quality.md` "Seeds"), idempotent by natural keys li
 - Customers: 4 owners (2 `es`, 2 `en`) with 5 dogs of different sizes/coats and 1 cat; one dog with allergies and `NEEDS_MUZZLE`; vaccines (one expired).
 - Past visits: 3 `COMPLETED` appointments in the last 30 days with pet visits, segments, all steps `DONE`, one observation, and a published `visit_report`.
 
-- [ ] **Step 1: Write failing test** `seed.int.test.ts`: `runSeed` on an empty test DB returns `services >= 15`, `staff 6`, `customers 4`, `pets 6`, `reports 3`; every service has a NULL-coat row for each of S/M/L/XL; running it twice gives the same counts; the stored location settings parse with `LocationSettingsSchema`.
-- [ ] **Step 2: Run** `pnpm --filter @grooming/api test:int -- seed` — FAIL.
-- [ ] **Step 3: Implement.** Then run `pnpm --filter @grooming/api db:seed` against the dev DB twice; both print `seed ok` with the same counts.
-- [ ] **Step 4: Run** Step 2 command and global checks — PASS.
-- [ ] **Step 5: Commit** `feat(api): full development seed`.
+- [x] **Step 1: Write failing test** `seed.int.test.ts`: `runSeed` on an empty test DB returns `services >= 15`, `staff 6`, `customers 4`, `pets 6`, `reports 3`; every service has a NULL-coat row for each of S/M/L/XL; running it twice gives the same counts; the stored location settings parse with `LocationSettingsSchema`.
+- [x] **Step 2: Run** `pnpm --filter @grooming/api test:int -- seed` — FAIL.
+- [x] **Step 3: Implement.** Then run `pnpm --filter @grooming/api db:seed` against the dev DB twice; both print `seed ok` with the same counts.
+- [x] **Step 4: Run** Step 2 command and global checks — PASS.
+- [x] **Step 5: Commit** `feat(api): full development seed`.
 
 ---
 
