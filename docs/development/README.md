@@ -36,6 +36,13 @@ compose and the API). Every `docker compose` command fails until
 `:?` interpolation rejects empty values; run `secrets:gen` first. Databases
 `grooming` and `grooming_test` (user/password `grooming`, local only).
 
+## What the seed creates
+
+`db:seed` fills the dev database with a demo shop (see `docs/data/README.md`,
+Seed): catalog and prices, 6 staff, 4 customers with 6 pets, 3 completed visits
+with reports. Staff have no passwords and cannot log in (`can_login` false);
+the owner is `owner@demo.dev`; run `create-owner` to set up a real login.
+
 ## First owner
 
 After `pnpm --filter @grooming/api db:seed`, create the first OWNER of the
