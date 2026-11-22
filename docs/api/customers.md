@@ -17,6 +17,9 @@ for OWNER and RECEPTION only; EMPLOYEE responses omit the field. Soft-deleted cu
 
 ## Owner (`CustomerAuth`)
 
-- `GET /me` -> `CustomerView` (404 if the customer is soft-deleted).
-- `PATCH /me` `{ name?, email?, locale?, emergencyPhone? }` -> `CustomerView`. Audit `customer.update` with `actorType: CUSTOMER`.
+- `GET /me` -> `MeView` (404 if the customer is soft-deleted). `MeView` is `CustomerView` plus
+  `identities: [{ provider: "GOOGLE", email }]` (`[]` when no sign-in account is linked; the Google `sub` is never shown).
+- `PATCH /me` `{ name?, email?, locale?, emergencyPhone? }` -> `MeView`. Audit `customer.update` with `actorType: CUSTOMER`.
+- Link or unlink Google: `POST`/`DELETE /me/identities/google`, see [owner sign-in](owner-sign-in.md#profile-link-and-unlink).
+- Staff customer views (`/staff/customers*`) do not include `identities`.
 - Staff tokens get 403.

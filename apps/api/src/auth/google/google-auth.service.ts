@@ -1,6 +1,6 @@
-import { Inject, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import type { Request, Response } from "express";
-import type { GoogleNonceResponse, GoogleSignInResponse } from "@grooming/contracts";
+import type { AccessClaims, GoogleNonceResponse, GoogleSignInResponse } from "@grooming/contracts";
 import { AuditService } from "../../audit/audit.service.js";
 import { ENV, type Env } from "../../config/env.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
@@ -10,11 +10,14 @@ import { requestMeta } from "../request-meta.js";
 import { SessionService } from "../session.service.js";
 import { BrowserBindingStore } from "./browser-binding.store.js";
 import { GoogleIdTokenVerifier } from "./google-id-token.js";
+import { IdentityLinkService } from "./identity-link.service.js";
 
 /** Rate limits: [limit, window seconds]. */
 const NONCE_PER_IP = [30, 600] as const;
 const SIGNIN_PER_IP = [10, 600] as const;
 const SIGNIN_PER_SUB = [10, 600] as const;
+const LINK_PER_CUSTOMER = [5, 3600] as const;
+const UNLINK_PER_CUSTOMER = [5, 3600] as const;
 
 const unauthorized = () => new UnauthorizedException({ code: "UNAUTHORIZED" });
 
@@ -35,6 +38,7 @@ export class GoogleAuthService {
     private readonly sessions: SessionService,
     private readonly audit: AuditService,
     private readonly prisma: PrismaService,
+    private readonly links: IdentityLinkService,
   ) {}
 
   get enabled(): boolean {
@@ -94,6 +98,60 @@ export class GoogleAuthService {
     });
     const tokens = await this.sessions.start({ type: "CUSTOMER", id: customerId }, req, res);
     return { status: "SIGNED_IN", ...tokens, isNew };
+  }
+
+  /**
+   * Profile link (`POST /me/identities/google`). 204 when linked or already linked to this customer; 409
+   * IDENTITY_TAKEN, with one body for both causes, when the account belongs to another customer or this
+   * customer has another Google account.
+   */
+  async link(p: AccessClaims, idToken: string, req: Request, res: Response): Promise<void> {
+    this.assertEnabled();
+    const customerId = p.sub;
+    await this.rateLimit.enforce(`gauth:link:${customerId}`, ...LINK_PER_CUSTOMER);
+    const claims = await this.verifier.verify(idToken);
+    if (!(await this.bindings.consumeNonce(claims.nonce, req, res))) throw unauthorized();
+
+    const orgId = await this.tenancy.getOrgId();
+    const outcome = await this.prisma.$transaction((tx) =>
+      this.links.linkInTx(tx, {
+        orgId,
+        customerId,
+        sub: claims.sub,
+        email: claims.email,
+        name: claims.name ?? claims.givenName ?? null,
+        notify: true,
+        actorIp: requestMeta(req).ip,
+      }),
+    );
+    if (outcome === "TAKEN") throw new ConflictException({ code: "IDENTITY_TAKEN" });
+  }
+
+  /** Profile unlink (`DELETE /me/identities/google`). Always 204; audits only when a row was removed. */
+  async unlink(p: AccessClaims, req: Request): Promise<void> {
+    this.assertEnabled();
+    const customerId = p.sub;
+    await this.rateLimit.enforce(`gauth:unlink:${customerId}`, ...UNLINK_PER_CUSTOMER);
+    const orgId = await this.tenancy.getOrgId();
+    await this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.customerIdentity.deleteMany({
+        where: { organizationId: orgId, customerId, provider: "GOOGLE" },
+      });
+      if (count === 0) return;
+      await this.audit.record(
+        {
+          orgId,
+          actorType: "CUSTOMER",
+          actorId: customerId,
+          action: "auth.customer.identity_unlinked",
+          entity: "customer",
+          entityId: customerId,
+          after: { provider: "GOOGLE" },
+          ip: requestMeta(req).ip,
+        },
+        tx,
+      );
+    });
   }
 
   private ipKey(req: Request): string {

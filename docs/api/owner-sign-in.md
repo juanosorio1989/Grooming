@@ -9,7 +9,7 @@ Schemas live in `packages/contracts/src/auth.ts`. Code: `apps/api/src/auth/googl
 
 `GOOGLE_OAUTH_CLIENT_IDS` (comma-separated OAuth client IDs; the token `aud`
 must be one of them). Empty (the default in dev and tests) turns the feature
-off: both endpoints below return `404 NOT_FOUND`, and `/auth/otp/verify`
+off: every endpoint below (sign-in and Profile) returns `404 NOT_FOUND`, and `/auth/otp/verify`
 ignores `linkTicket` and leaves `identityLinked` out of its response.
 
 ## Endpoints
@@ -21,6 +21,22 @@ ignores `linkTicket` and leaves `identityLinked` out of its response.
 
 An email match never links or signs in anyone. A failed token check does not
 consume the nonce; a nonce or ticket lookup always deletes it.
+
+## Profile (link and unlink)
+
+A signed-in owner can link or unlink a Google account from their profile. Code:
+`apps/api/src/auth/google/me-identities.controller.ts` and
+`GoogleAuthService.link` / `unlink`.
+
+| Method and path | Auth | Notes |
+| --- | --- | --- |
+| `POST /me/identities/google` | customer | Body `{ idToken (1..4096) }` (strict). Get a nonce from `POST /auth/google/nonce` first: the token's `nonce` must match and the request must carry the same browser's `gr_gnonce` cookie, else `401 UNAUTHORIZED`. `204` when linked, or already linked to this customer (the identity email is refreshed, no new audit or outbox row). `409 IDENTITY_TAKEN` when this Google account belongs to another customer **or** this customer already has another Google account; the body is the same for both, so it does not reveal which |
+| `DELETE /me/identities/google` | customer | Removes this customer's Google identity. Always `204`, also when nothing is linked |
+
+Staff tokens get `403`, no token `401`. A Profile link always writes the
+`customer.identity_linked` outbox row (the customer existed before). `GET /me`
+and `PATCH /me` list linked accounts in `identities` (see
+[customers](customers.md)).
 
 ## Ticket on `/auth/otp/verify`
 
@@ -46,8 +62,8 @@ deleted-customer `401` and the per-phone verify limit apply as before.
 
 ## Link notice (outbox)
 
-A link to a customer who existed before this verify writes one `outbox_event`
-row in the same transaction:
+A link to a customer who existed before this verify, and every Profile link,
+writes one `outbox_event` row in the same transaction:
 
 | Field | Value |
 | --- | --- |
@@ -67,7 +83,7 @@ max age 10 min, cleared when consumed.
 
 | Cookie | Path | Read by |
 | --- | --- | --- |
-| `gr_gnonce` | `/v1` | `/auth/google` (and later `/me/identities/google`) |
+| `gr_gnonce` | `/v1` | `/auth/google` and `POST /me/identities/google` |
 | `gr_glink` | `/v1/auth` | `/auth/otp/verify` |
 
 Redis: `gauth:nonce:<sha256(nonce)>` holds the binding;
@@ -81,6 +97,8 @@ Both expire after 600 s and are read with `GETDEL`.
 | `/auth/google/nonce` per IP | 30 per 10 min |
 | `/auth/google` per IP | 10 per 10 min (checked before the token) |
 | `/auth/google` per `hashKeyPart(sub)` | 10 per 10 min (after the token and nonce check) |
+| `POST /me/identities/google` per customer (`gauth:link:<customerId>`) | 5 per hour (checked before the token) |
+| `DELETE /me/identities/google` per customer (`gauth:unlink:<customerId>`) | 5 per hour |
 
 Over the limit: `429 RATE_LIMITED`.
 
@@ -88,5 +106,8 @@ Over the limit: `429 RATE_LIMITED`.
 
 A sign-in of a linked account records `auth.customer.login` with
 `after: { method: "google", isNew }`. A link records
-`auth.customer.identity_linked` with `after: { provider: "GOOGLE" }`. The Google `sub`, the ID token, the nonce,
+`auth.customer.identity_linked` with `after: { provider: "GOOGLE" }` (verify or
+Profile). An unlink that removed a row records `auth.customer.identity_unlinked`
+with `after: { provider: "GOOGLE" }`; an unlink with nothing linked records
+nothing. The Google `sub`, the ID token, the nonce,
 the ticket and the binding value are never logged or audited.

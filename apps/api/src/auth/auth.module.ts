@@ -12,6 +12,7 @@ import { GoogleAuthService } from "./google/google-auth.service.js";
 import { GoogleIdTokenVerifier } from "./google/google-id-token.js";
 import { GOOGLE_JWKS, googleJwksFactory } from "./google/google-jwks.js";
 import { IdentityLinkService } from "./google/identity-link.service.js";
+import { MeIdentitiesController } from "./google/me-identities.controller.js";
 import { ConsoleOtpProvider } from "./otp/console-otp.provider.js";
 import { FakeOtpProvider } from "./otp/fake-otp.provider.js";
 import { OTP_PROVIDER, type OtpProvider } from "./otp/otp-provider.js";
@@ -47,6 +48,7 @@ function otpProviderFactory(env: Env, redis: Redis): OtpProvider {
     SessionController,
     OtpController,
     GoogleAuthController,
+    MeIdentitiesController,
     StaffAuthController,
     StaffLinksController,
     StaffAdminController,
