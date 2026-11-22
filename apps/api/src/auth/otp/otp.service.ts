@@ -11,6 +11,7 @@ import {
 import type { Request, Response } from "express";
 import type { Locale, OtpStartResponse, OtpVerifyResponse } from "@grooming/contracts";
 import { AuditService } from "../../audit/audit.service.js";
+import { ENV, type Env } from "../../config/env.js";
 import { BrowserBindingStore, type LinkTicketData } from "../google/browser-binding.store.js";
 import { GoogleAuthService } from "../google/google-auth.service.js";
 import { IdentityLinkService, type LinkOutcome } from "../google/identity-link.service.js";
@@ -36,10 +37,10 @@ const US_ONLY = "Only US phone numbers are supported";
 const INVALID_US = "Enter a valid US phone number";
 /** NANP: +1, area code and exchange each start with 2-9. Non-US NANP ranges are left to Twilio Geo Permissions and Fraud Guard. */
 const NANP = /^\+1[2-9]\d{2}[2-9]\d{6}$/;
-const CHANNELS: readonly OtpChannel[] = ["whatsapp", "sms"];
 
 /**
- * Customer login by phone: `start` sends a code (WhatsApp first, SMS fallback),
+ * Customer login by phone: `start` sends a code over `env.OTP_CHANNELS` in order
+ * (default SMS only; each failing channel falls back to the next),
  * `verify` checks it, finds or creates the customer and starts a session.
  * Phones appear in Redis keys only as `hashKeyPart(phone)`. Verifying a phone
  * is not consent to messages: no `notification_consent` rows are written here.
@@ -53,6 +54,7 @@ export class OtpService {
 
   constructor(
     @Inject(OTP_PROVIDER) private readonly provider: OtpProvider,
+    @Inject(ENV) private readonly env: Env,
     private readonly rateLimit: RateLimitService,
     private readonly tenancy: TenancyService,
     private readonly sessions: SessionService,
@@ -67,7 +69,8 @@ export class OtpService {
     assertUsPhone(req.phone);
     await this.rateLimit.enforce(`otp:start:phone:${this.rateLimit.hashKeyPart(req.phone)}`, ...START_PER_PHONE);
     await this.rateLimit.enforce(`otp:start:ip:${this.rateLimit.hashKeyPart(ip)}`, ...START_PER_IP);
-    for (const channel of CHANNELS) {
+    const channels: readonly OtpChannel[] = this.env.OTP_CHANNELS;
+    for (const channel of channels) {
       try {
         await this.provider.start(req.phone, channel, req.locale);
         return { channel };

@@ -146,6 +146,21 @@ describe("loadEnv", () => {
     }
   });
 
+  it("OTP_CHANNELS unset defaults to sms only", () => {
+    expect(loadEnv(base).OTP_CHANNELS).toEqual(["sms"]);
+  });
+
+  it.each([
+    ["whatsapp,sms", ["whatsapp", "sms"]],
+    [" sms , whatsapp ", ["sms", "whatsapp"]],
+  ])("OTP_CHANNELS %j keeps its order", (value, expected) => {
+    expect(loadEnv({ ...base, OTP_CHANNELS: value }).OTP_CHANNELS).toEqual(expected);
+  });
+
+  it.each([",", " , ", "sms,,whatsapp", "email", "sms,sms", "SMS"])("OTP_CHANNELS %j is rejected and named", (value) => {
+    expect(errorOf(() => loadEnv({ ...base, OTP_CHANNELS: value }))).toBe("Invalid environment: OTP_CHANNELS");
+  });
+
   it("empty values count as missing", () => {
     const msg = errorOf(() => loadEnv({ ...base, JWT_PRIVATE_KEY_B64: "", DEFAULT_ORG_SLUG: "" }));
     expect(msg).toMatch(/JWT_PRIVATE_KEY_B64/);

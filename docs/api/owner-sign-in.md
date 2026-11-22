@@ -38,6 +38,16 @@ Staff tokens get `403`, no token `401`. A Profile link always writes the
 and `PATCH /me` list linked accounts in `identities` (see
 [customers](customers.md)).
 
+## Code channels
+
+`POST /auth/otp/start` sends the code over the channels in `OTP_CHANNELS`, in
+order (comma-separated `whatsapp`, `sms`; default `sms`, so WhatsApp is never
+called until its sender is active in Twilio Verify). A failing channel falls
+back to the next, except: a `400` from `sms` is `400 VALIDATION_FAILED` on
+`phone`, and a provider rate limit on any channel is `429 RATE_LIMITED`. When
+every channel fails: `503`. The response `{ channel }` names the channel that
+sent the code. Code: `apps/api/src/auth/otp/otp.service.ts`.
+
 ## Ticket on `/auth/otp/verify`
 
 `POST /auth/otp/verify` takes an optional `linkTicket` (1..128; the body is

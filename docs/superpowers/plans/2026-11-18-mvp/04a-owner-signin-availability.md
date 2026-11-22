@@ -42,6 +42,7 @@ Main session: Opus 5.5. It orchestrates and does not implement tasks.
 | 4 | Profile link/unlink, `GET /me` identities | **implementer-opus** | reviewer-opus | auth |
 | 5 | Availability context: pure DB-to-engine mapper and loader | implementer-sonnet | reviewer-opus | read-only, exact interfaces and mapping rules given |
 | 6 | `GET /availability`: contracts, optional-customer guard policy, pets resolution, range cap, rate limit | **implementer-opus** | reviewer-opus | changes the global `AccessGuard` (auth) |
+| 7 | `OTP_CHANNELS`: ordered, configurable OTP channels (added 2026-11-21 at the owner's request) | **implementer-opus** | reviewer-opus | auth (OTP sign-in) |
 
 Final branch review: reviewer-opus. This is not a money branch. Task 3 writes
 customer rows inside sign-in, so it gets its own Opus implementer and review, as
@@ -394,6 +395,37 @@ Rules:
 - [ ] **Step 5: Implement** the contracts, the policy, the service and the controller (`@Controller("availability")`, `@Get()`, `@OptionalCustomerAuth()`, query through `ZodValidationPipe(AvailabilityQuerySchema)`).
 - [ ] **Step 6: Run the same commands.** Expected: PASS.
 - [ ] **Step 7: Write `docs/api/availability.md`** (query format with an example URL, the 7-day cap, pets rules, error mapping, rate limit), add a line to `docs/api/README.md`, run every check, then commit `feat(api): GET /availability for owners and anonymous visitors`.
+
+---
+
+### Task 7: Configurable OTP channels (`OTP_CHANNELS`)
+
+Added 2026-11-21 at the owner's request. Twilio Verify's WhatsApp channel needs a Meta-approved sender. Until it exists, the API must not call WhatsApp at all, so the channel order becomes configuration.
+
+**Files:**
+- Modify: `apps/api/src/config/env.ts`, `apps/api/test/support/test-env.ts` (only if needed), `.env.example`
+- Modify: `apps/api/src/auth/otp/otp.service.ts` (replace the `CHANNELS` constant)
+- Test: `apps/api/test/env.test.ts`, `apps/api/test/integration/auth/otp.int.test.ts`
+- Docs: `.env.example` comment, `docs/api/owner-sign-in.md` (a short "Code channels" note), `docs/development/README.md` (env line)
+
+**Interfaces:**
+- Produces (env): `OTP_CHANNELS: OtpChannel[]` (`"whatsapp" | "sms"`, the existing `OtpChannel` type), an ordered list parsed from a comma-separated string, with entries trimmed and lowercase-sensitive (exact values `whatsapp`, `sms`). **Default `["sms"]`** when unset. An unset or blank value counts as unset, because `loadEnv` already drops blank values. Invalid → `loadEnv` throws `Invalid environment: OTP_CHANNELS`. Invalid means: the list is empty after splitting (for example `","` or `" , "`), it has an empty entry, an unknown value, or a value repeated.
+- `OtpService.start` tries `env.OTP_CHANNELS` in order, with today's fallback rules unchanged: any provider error moves on to the next channel, except that `OtpInvalidRecipientError` **from `sms`** → 400 `VALIDATION_FAILED` (`INVALID_US`) and `OtpProviderRateLimitedError` from any channel → 429. When every channel fails → 503. The response `{ channel }` is the channel that succeeded.
+
+- [ ] **Step 1: Write the failing tests**
+  - `env.test.ts`: unset → `["sms"]`; `"whatsapp,sms"` → `["whatsapp","sms"]`; `" sms , whatsapp "` → `["sms","whatsapp"]`; each of `","`, `"sms,,whatsapp"`, `"email"`, `"sms,sms"`, `"SMS"` → throws and names `OTP_CHANNELS`.
+  - `otp.int.test.ts` (stub provider that records the channels it was called with):
+    - `default config → only sms is called; response {channel:"sms"}`
+    - `OTP_CHANNELS=whatsapp,sms and whatsapp unavailable → whatsapp then sms`
+    - `OTP_CHANNELS=whatsapp,sms and whatsapp 400 → falls back to sms`
+    - `OTP_CHANNELS=sms,whatsapp and sms 400 → 400 VALIDATION_FAILED, whatsapp never called`
+    - `OTP_CHANNELS=whatsapp only and whatsapp unavailable → 503`
+    - `rate limited on the first channel → 429, second never called`
+  - Update the existing OTP tests that assume WhatsApp first so that they set `OTP_CHANNELS: "whatsapp,sms"` explicitly.
+- [ ] **Step 2: Run them.** Run: `pnpm --filter @grooming/api test -- env && pnpm --filter @grooming/api test:int -- otp`. Expected: FAIL.
+- [ ] **Step 3: Implement** the env field and the `OtpService` change. `.env.example` gets `OTP_CHANNELS=sms`, with a comment: "ordered, comma-separated: whatsapp, sms; add whatsapp only once the WhatsApp sender is active in Twilio Verify".
+- [ ] **Step 4: Run the same commands.** Expected: PASS.
+- [ ] **Step 5: Update the docs, run every check from Global Constraints, then commit** `feat(api): configurable OTP channel order (OTP_CHANNELS, default sms)`.
 
 ---
 

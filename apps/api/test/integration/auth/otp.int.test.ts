@@ -54,10 +54,10 @@ describe("customer phone OTP (fake provider)", () => {
     await ctx?.close();
   });
 
-  it("start answers 200 with channel whatsapp", async () => {
+  it("start answers 200 with channel sms (default OTP_CHANNELS)", async () => {
     const res = await start("+13055550100");
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ channel: "whatsapp" });
+    expect(res.body).toEqual({ channel: "sms" });
   });
 
   it("start rejects a non-US phone with VALIDATION_FAILED on path phone", async () => {
@@ -200,8 +200,12 @@ describe("customer phone OTP (fake provider)", () => {
 describe("customer phone OTP channel fallback", () => {
   let ctx: Ctx | undefined;
 
-  const withProvider = async (provider: OtpProvider) => {
-    ctx = await createIntegrationApp({ override: (b) => b.overrideProvider(OTP_PROVIDER).useValue(provider) });
+  /** `otpChannels` sets `OTP_CHANNELS`; undefined keeps the default (sms only). */
+  const withProvider = async (provider: OtpProvider, otpChannels?: string) => {
+    ctx = await createIntegrationApp({
+      env: otpChannels === undefined ? {} : { OTP_CHANNELS: otpChannels },
+      override: (b) => b.overrideProvider(OTP_PROVIDER).useValue(provider),
+    });
     await resetState(ctx.prisma, ctx.redis);
     await seedFixture(ctx.prisma);
     return ctx;
@@ -213,15 +217,94 @@ describe("customer phone OTP channel fallback", () => {
     await ctx?.close();
   });
 
-  it("falls back to sms when whatsapp throws", async () => {
+  it("default config: only sms is called and the response is channel sms", async () => {
     const channels: string[] = [];
     const c = await withProvider({
       start: async (_phone, channel) => {
         channels.push(channel);
-        if (channel === "whatsapp") throw new Error("whatsapp down");
       },
       check: async () => false,
     });
+    const res = await start(c);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ channel: "sms" });
+    expect(channels).toEqual(["sms"]);
+    await c.close();
+    ctx = undefined;
+  });
+
+  it("OTP_CHANNELS=sms,whatsapp and sms 400: 400 VALIDATION_FAILED, whatsapp never called", async () => {
+    const channels: string[] = [];
+    const c = await withProvider(
+      {
+        start: async (_phone, channel) => {
+          channels.push(channel);
+          if (channel === "sms") throw new OtpInvalidRecipientError("start: 400");
+        },
+        check: async () => false,
+      },
+      "sms,whatsapp",
+    );
+    const res = await start(c);
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("VALIDATION_FAILED");
+    expect(res.body.errors[0].path).toBe("phone");
+    expect(channels).toEqual(["sms"]);
+    await c.close();
+    ctx = undefined;
+  });
+
+  it("OTP_CHANNELS=sms,whatsapp and sms unavailable: falls back to whatsapp", async () => {
+    const channels: string[] = [];
+    const c = await withProvider(
+      {
+        start: async (_phone, channel) => {
+          channels.push(channel);
+          if (channel === "sms") throw new OtpProviderUnavailableError("start: 503");
+        },
+        check: async () => false,
+      },
+      "sms,whatsapp",
+    );
+    const res = await start(c);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ channel: "whatsapp" });
+    expect(channels).toEqual(["sms", "whatsapp"]);
+    await c.close();
+    ctx = undefined;
+  });
+
+  it("OTP_CHANNELS=whatsapp only and whatsapp unavailable: 503, sms never called", async () => {
+    const channels: string[] = [];
+    const c = await withProvider(
+      {
+        start: async (_phone, channel) => {
+          channels.push(channel);
+          throw new OtpProviderUnavailableError("start: 503");
+        },
+        check: async () => false,
+      },
+      "whatsapp",
+    );
+    const res = await start(c);
+    expect(res.status).toBe(503);
+    expect(channels).toEqual(["whatsapp"]);
+    await c.close();
+    ctx = undefined;
+  });
+
+  it("OTP_CHANNELS=whatsapp,sms: falls back to sms when whatsapp throws", async () => {
+    const channels: string[] = [];
+    const c = await withProvider(
+      {
+        start: async (_phone, channel) => {
+          channels.push(channel);
+          if (channel === "whatsapp") throw new Error("whatsapp down");
+        },
+        check: async () => false,
+      },
+      "whatsapp,sms",
+    );
     const res = await start(c);
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ channel: "sms" });
@@ -230,15 +313,18 @@ describe("customer phone OTP channel fallback", () => {
     ctx = undefined;
   });
 
-  it("falls back to sms when whatsapp is unavailable", async () => {
+  it("OTP_CHANNELS=whatsapp,sms and whatsapp unavailable: whatsapp then sms", async () => {
     const channels: string[] = [];
-    const c = await withProvider({
-      start: async (_phone, channel) => {
-        channels.push(channel);
-        if (channel === "whatsapp") throw new OtpProviderUnavailableError("whatsapp: 503");
+    const c = await withProvider(
+      {
+        start: async (_phone, channel) => {
+          channels.push(channel);
+          if (channel === "whatsapp") throw new OtpProviderUnavailableError("whatsapp: 503");
+        },
+        check: async () => false,
       },
-      check: async () => false,
-    });
+      "whatsapp,sms",
+    );
     const res = await start(c);
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ channel: "sms" });
@@ -247,15 +333,18 @@ describe("customer phone OTP channel fallback", () => {
     ctx = undefined;
   });
 
-  it("an invalid recipient on whatsapp (channel config error) falls back to sms", async () => {
+  it("OTP_CHANNELS=whatsapp,sms and whatsapp 400 (channel config error): falls back to sms", async () => {
     const channels: string[] = [];
-    const c = await withProvider({
-      start: async (_phone, channel) => {
-        channels.push(channel);
-        if (channel === "whatsapp") throw new OtpInvalidRecipientError("start: 400");
+    const c = await withProvider(
+      {
+        start: async (_phone, channel) => {
+          channels.push(channel);
+          if (channel === "whatsapp") throw new OtpInvalidRecipientError("start: 400");
+        },
+        check: async () => false,
       },
-      check: async () => false,
-    });
+      "whatsapp,sms",
+    );
     const res = await start(c);
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ channel: "sms" });
@@ -264,16 +353,19 @@ describe("customer phone OTP channel fallback", () => {
     ctx = undefined;
   });
 
-  it("an invalid recipient on sms is 400 VALIDATION_FAILED on phone", async () => {
+  it("OTP_CHANNELS=whatsapp,sms and an invalid recipient on sms: 400 VALIDATION_FAILED on phone", async () => {
     const channels: string[] = [];
-    const c = await withProvider({
-      start: async (_phone, channel) => {
-        channels.push(channel);
-        if (channel === "whatsapp") throw new OtpProviderUnavailableError("whatsapp: 503");
-        throw new OtpInvalidRecipientError("start: 400");
+    const c = await withProvider(
+      {
+        start: async (_phone, channel) => {
+          channels.push(channel);
+          if (channel === "whatsapp") throw new OtpProviderUnavailableError("whatsapp: 503");
+          throw new OtpInvalidRecipientError("start: 400");
+        },
+        check: async () => false,
       },
-      check: async () => false,
-    });
+      "whatsapp,sms",
+    );
     const res = await start(c);
     expect(res.status).toBe(400);
     expect(res.body.code).toBe("VALIDATION_FAILED");
@@ -283,15 +375,18 @@ describe("customer phone OTP channel fallback", () => {
     ctx = undefined;
   });
 
-  it("a provider rate limit on start is 429 RATE_LIMITED and never tries sms", async () => {
+  it("rate limited on the first channel (whatsapp,sms): 429 RATE_LIMITED, sms never called", async () => {
     const channels: string[] = [];
-    const c = await withProvider({
-      start: async (_phone, channel) => {
-        channels.push(channel);
-        throw new OtpProviderRateLimitedError("start: 429");
+    const c = await withProvider(
+      {
+        start: async (_phone, channel) => {
+          channels.push(channel);
+          throw new OtpProviderRateLimitedError("start: 429");
+        },
+        check: async () => false,
       },
-      check: async () => false,
-    });
+      "whatsapp,sms",
+    );
     const res = await start(c);
     expect(res.status).toBe(429);
     expect(res.body.code).toBe("RATE_LIMITED");
@@ -333,13 +428,16 @@ describe("customer phone OTP channel fallback", () => {
     ctx = undefined;
   });
 
-  it("answers 503 when both channels throw", async () => {
-    const c = await withProvider({
-      start: async () => {
-        throw new Error("provider down");
+  it("OTP_CHANNELS=whatsapp,sms: answers 503 when both channels throw", async () => {
+    const c = await withProvider(
+      {
+        start: async () => {
+          throw new Error("provider down");
+        },
+        check: async () => false,
       },
-      check: async () => false,
-    });
+      "whatsapp,sms",
+    );
     const res = await start(c);
     expect(res.status).toBe(503);
     expect(res.headers["content-type"]).toMatch(/^application\/problem\+json/);

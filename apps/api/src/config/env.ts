@@ -63,6 +63,21 @@ const csvList = z.string().transform((v) =>
     .filter((p) => p !== ""),
 );
 
+/**
+ * Ordered OTP channels: comma-separated `whatsapp` / `sms` (exact, lowercase),
+ * entries trimmed. Empty entries, unknown values and repeats are rejected.
+ */
+const otpChannels = z.string().transform((v, ctx): ("whatsapp" | "sms")[] => {
+  const list = v.split(",").map((p) => p.trim());
+  const valid = list.every((p): p is "whatsapp" | "sms" => p === "whatsapp" || p === "sms");
+  if (valid && new Set(list).size === list.length) return list;
+  ctx.addIssue({
+    code: z.ZodIssueCode.custom,
+    message: "must be an ordered, comma-separated list of distinct whatsapp, sms",
+  });
+  return z.NEVER;
+});
+
 /** Base64 of exactly 32 bytes (AES-256 key). */
 const key32B64 = z
   .string()
@@ -81,6 +96,8 @@ const EnvSchema = z
     DATA_ENCRYPTION_KEY: key32B64,
     DATA_ENCRYPTION_KEY_ID: z.string().min(1).default("k1"),
     OTP_PROVIDER: z.enum(["twilio", "console", "fake"]).default("console"),
+    /** Ordered OTP channels for `/auth/otp/start`. Default sms only: WhatsApp needs an active Twilio Verify sender. */
+    OTP_CHANNELS: otpChannels.default("sms"),
     TWILIO_ACCOUNT_SID: z.string().optional(),
     TWILIO_AUTH_TOKEN: z.string().optional(),
     TWILIO_VERIFY_SERVICE_SID: z.string().optional(),
