@@ -46,7 +46,7 @@ export class HoldSweeper implements OnApplicationBootstrap, OnApplicationShutdow
       const count = await this.sweepOnce();
       if (count > 0) this.logger.log(`Released ${count} expired hold(s)`);
     } catch (err) {
-      this.logger.error(`Hold sweep failed: ${(err as Error).message}`);
+      this.logger.error("Hold sweep failed", (err as Error).stack);
     } finally {
       this.running = false;
     }

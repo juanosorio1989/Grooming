@@ -338,6 +338,88 @@ describe("/v1/holds", () => {
     expect((await hold(body, staff)).status).toBe(403);
   });
 
+  it('slot with bookingMode "WAIT" for a DROP_OFF service → 400 path slot.bookingMode', async () => {
+    const { body } = await firstInline();
+    body.slot.bookingMode = "WAIT";
+    const res = await hold(body);
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("VALIDATION_FAILED");
+    expect(res.body.errors.map((e: { path: string }) => e.path)).toEqual(["slot.bookingMode"]);
+  });
+
+  it("slot more than 400 days ahead → 400 path slot.startsAt", async () => {
+    const { body } = await firstInline();
+    const ahead = (iso: string) => new Date(Date.parse(iso) + 500 * DAY).toISOString();
+    const s = body.slot;
+    s.startsAt = ahead(s.startsAt);
+    s.readyAt = ahead(s.readyAt);
+    for (const seg of s.pets[0]!.segments) {
+      seg.startsAt = ahead(seg.startsAt);
+      seg.endsAt = ahead(seg.endsAt);
+      seg.blockEndsAt = ahead(seg.blockEndsAt);
+    }
+    const res = await hold(body);
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("VALIDATION_FAILED");
+    expect(res.body.errors.map((e: { path: string }) => e.path)).toEqual(["slot.startsAt"]);
+  });
+
+  it("soft-deleted customer token with a size that does not match the weight → 401 (before the 400)", async () => {
+    const token = await ownerToken();
+    const { body } = await firstInline();
+    await ctx.prisma.customer.update({ where: { id: f.customerId }, data: { deletedAt: new Date() } });
+    const res = await hold({ ...body, pets: [newPet({ weightG: 9000, sizeClass: "L" })] }, token);
+    expect(res.status).toBe(401);
+  });
+
+  it("replaceHoldId of my hold that expired and was released → ignored; the new hold is created", async () => {
+    const { body } = await firstInline();
+    const first = await hold(body);
+    await ctx.prisma.appointment.update({ where: { id: first.body.holdId }, data: { holdExpiresAt: new Date(Date.now() - MIN) } });
+    const second = await hold({ ...body, replaceHoldId: first.body.holdId });
+    expect(second.status).toBe(201);
+    const old = await ctx.prisma.appointment.findUniqueOrThrow({ where: { id: first.body.holdId } });
+    expect(old).toMatchObject({ status: "CANCELLED", cancelReason: "HOLD_EXPIRED", cancelledBy: "SYSTEM" });
+    expect((await ctx.prisma.appointment.findUniqueOrThrow({ where: { id: second.body.holdId } })).status).toBe("HELD");
+  });
+
+  it("replaceHoldId of my hold that was already released → ignored; the new hold is created", async () => {
+    const token = await ownerToken();
+    const [slot] = await slots([savedPet()], token);
+    const first = await hold({ pets: [savedPet()], slot }, token);
+    expect((await cancel(first.body.holdId, token)).status).toBe(204);
+    const second = await hold({ pets: [savedPet()], slot, replaceHoldId: first.body.holdId }, token);
+    expect(second.status).toBe(201);
+    const old = await ctx.prisma.appointment.findUniqueOrThrow({ where: { id: first.body.holdId } });
+    expect(old).toMatchObject({ status: "CANCELLED", cancelReason: "HOLD_RELEASED" });
+  });
+
+  it("replaceHoldId that does not exist in this organization → 404", async () => {
+    const { body } = await firstInline();
+    const f2 = await seedFixture(ctx.prisma, { slug: "other-salon" });
+    const theirs = await ctx.prisma.appointment.create({
+      data: {
+        organizationId: f2.orgId, locationId: f2.locationId, status: "CANCELLED", source: "ONLINE", bookingMode: "WAIT",
+      },
+    });
+    expect((await hold({ ...body, replaceHoldId: "0194b2a0-0000-7000-8000-000000000000" })).status).toBe(404);
+    expect((await hold({ ...body, replaceHoldId: theirs.id })).status).toBe(404);
+    expect(await ctx.prisma.appointment.count({ where: { organizationId: f.orgId } })).toBe(0);
+  });
+
+  it("replaceHoldId of another customer's released hold → 404", async () => {
+    const token = await ownerToken();
+    const [slot] = await slots([savedPet()], token);
+    const mine = await hold({ pets: [savedPet()], slot }, token);
+    expect((await cancel(mine.body.holdId, token)).status).toBe(204);
+    const other = await ctx.prisma.customer.create({
+      data: { organizationId: f.orgId, phoneE164: "+13055550199", name: "Bo", locale: "en", createdVia: "ONLINE" },
+    });
+    const otherToken = await customerToken(ctx.app, { sub: other.id, org: f.orgId });
+    const { body } = await firstInline();
+    expect((await hold({ ...body, replaceHoldId: mine.body.holdId }, otherToken)).status).toBe(404);
+  });
+
   it("wall-time sanity: the first drop-off slot is 08:00", async () => {
     const { slot } = await firstInline();
     expect(slot.startsAt).toBe(local("08:00"));

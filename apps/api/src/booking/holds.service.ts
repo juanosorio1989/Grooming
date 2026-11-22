@@ -73,6 +73,8 @@ export class HoldsService {
     const location = await this.locations.getDefault();
     const { settings, timezone } = location;
 
+    // Validate outside the transaction. The resolver runs first so a deleted customer is 401 before any 400.
+    const { pets, labels } = await this.resolver.resolve(body.pets, principal?.sub ?? null);
     // A new pet's stated size must agree with its weight (same thresholds as saved pets).
     const sizeErrors = body.pets.flatMap((p, i) =>
       "ref" in p && p.weightG != null && sizeClassFromWeight(p.weightG, settings.sizeThresholdsLb) !== p.sizeClass
@@ -80,9 +82,6 @@ export class HoldsService {
         : [],
     );
     if (sizeErrors.length > 0) throw new BadRequestException({ code: "VALIDATION_FAILED", message: "Validation failed", errors: sizeErrors });
-
-    // Validate outside the transaction.
-    const { pets, labels } = await this.resolver.resolve(body.pets, principal?.sub ?? null);
     const slot = slotFromView(body.slot, labels);
     if (Math.abs(slot.start - Date.now()) > MAX_SLOT_DISTANCE_MS) throw fieldError("slot.startsAt", "Out of range");
     const day = utcToWall(slot.start, timezone).date;
@@ -113,10 +112,7 @@ export class HoldsService {
     return this.prisma.$transaction(async (tx) => {
       const now = new Date();
       await this.release.releaseExpired(tx, now, orgId);
-      if (body.replaceHoldId !== undefined) {
-        const old = await this.loadUsable(tx, body.replaceHoldId, principal);
-        await this.release.release(tx, old.id, "HOLD_RELEASED", "CUSTOMER");
-      }
+      if (body.replaceHoldId !== undefined) await this.releaseReplaced(tx, orgId, body.replaceHoldId, principal);
       const expiresAt = new Date(now.getTime() + settings.holdMinutes * MINUTE);
       const appt = await tx.appointment.create({
         data: {
@@ -194,13 +190,36 @@ export class HoldsService {
   }
 
   /**
+   * `replaceHoldId`: an id that does not exist in this organization, or a hold
+   * of another customer, is 404. The principal's own appointment that is no
+   * longer HELD (expired and released, or released) is ignored: the client
+   * cannot know it expired. A HELD one is released (HOLD_RELEASED, CUSTOMER).
+   */
+  private async releaseReplaced(tx: Prisma.TransactionClient, orgId: string, id: string, principal: AccessClaims | undefined): Promise<void> {
+    const row = await tx.appointment.findFirst({ where: { id, organizationId: orgId }, select: { id: true, status: true, customerId: true } });
+    if (!row || (row.customerId !== null && row.customerId !== principal?.sub)) throw notFound();
+    if (row.status !== "HELD") return;
+    await this.release.release(tx, row.id, "HOLD_RELEASED", "CUSTOMER");
+  }
+
+  /**
    * Shared with confirm: loads a HELD appointment of this organization that the
    * principal may use. A hold with `customerId` is usable only by that
    * customer's token; an anonymous hold by anyone holding the id. 404 when
    * missing, not HELD, or owned by another customer. Does not check expiry.
+   * With `lock`, takes `FOR UPDATE` on the row first (inside a transaction), so
+   * a concurrent confirm or release waits and then sees the new status.
    */
-  async loadUsable(tx: Prisma.TransactionClient, holdId: string, principal: AccessClaims | undefined): Promise<HeldAppointment> {
+  async loadUsable(
+    tx: Prisma.TransactionClient,
+    holdId: string,
+    principal: AccessClaims | undefined,
+    opts: { lock?: boolean } = {},
+  ): Promise<HeldAppointment> {
     const orgId = await this.tenancy.getOrgId();
+    if (opts.lock) {
+      await tx.$queryRaw`SELECT id FROM appointment WHERE id = ${holdId}::uuid AND organization_id = ${orgId}::uuid FOR UPDATE`;
+    }
     const row = await tx.appointment.findFirst({ where: { id: holdId, organizationId: orgId, status: "HELD" }, select: HELD_SELECT });
     if (!row || row.holdExpiresAt === null) throw notFound();
     if (row.customerId !== null && row.customerId !== principal?.sub) throw notFound();

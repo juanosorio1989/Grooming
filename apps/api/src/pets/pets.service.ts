@@ -184,31 +184,43 @@ export class PetsService {
   }
 
   async create(actor: PetActor, customerId: string, body: PetInput, ip: string | null): Promise<PetView> {
+    return this.prisma.$transaction(async (tx) => this.view(await this.insert(tx, actor, customerId, body, ip)));
+  }
+
+  /**
+   * `create` inside the caller's transaction (used by booking confirm): same
+   * size rule, the same customer lock and pet cap (409 CONFLICT), and the
+   * `pet.create` audit row. 404 when the customer is missing or deleted.
+   */
+  async createInTx(tx: Prisma.TransactionClient, actor: PetActor, customerId: string, body: PetInput, ip: string | null): Promise<{ id: string }> {
+    const row = await this.insert(tx, actor, customerId, body, ip);
+    return { id: row.id };
+  }
+
+  private async insert(tx: Prisma.TransactionClient, actor: PetActor, customerId: string, body: PetInput, ip: string | null): Promise<PetRow> {
     const orgId = await this.tenancy.getOrgId();
     const data = await this.fields(body, null);
-    return this.prisma.$transaction(async (tx) => {
-      // Locking the customer row serializes concurrent creates so the cap cannot be exceeded.
-      const locked = await tx.$queryRaw<{ id: string }[]>`
-        SELECT id FROM customer WHERE id = ${customerId}::uuid AND organization_id = ${orgId}::uuid AND deleted_at IS NULL FOR UPDATE`;
-      if (locked.length === 0) throw new NotFoundException("Customer not found");
-      const count = await tx.pet.count({ where: { organizationId: orgId, customerId, deletedAt: null } });
-      if (count >= MAX_PETS_PER_CUSTOMER) {
-        throw new ConflictException({ code: "CONFLICT", message: `A customer can have at most ${MAX_PETS_PER_CUSTOMER} pets` });
-      }
-      const row = await tx.pet.create({
-        data: {
-          ...(data as Prisma.PetUncheckedCreateInput),
-          organizationId: orgId,
-          customerId,
-          name: body.name,
-          species: body.species,
-          breed: body.breed,
-        },
-        include: withVaccines,
-      });
-      await this.audRecord(actor, orgId, "pet.create", "pet", row.id, null, { ...this.auditShape(row), medicalNotesChanged: body.medicalNotes !== undefined }, ip, tx);
-      return this.view(row);
+    // Locking the customer row serializes concurrent creates so the cap cannot be exceeded.
+    const locked = await tx.$queryRaw<{ id: string }[]>`
+      SELECT id FROM customer WHERE id = ${customerId}::uuid AND organization_id = ${orgId}::uuid AND deleted_at IS NULL FOR UPDATE`;
+    if (locked.length === 0) throw new NotFoundException("Customer not found");
+    const count = await tx.pet.count({ where: { organizationId: orgId, customerId, deletedAt: null } });
+    if (count >= MAX_PETS_PER_CUSTOMER) {
+      throw new ConflictException({ code: "CONFLICT", message: `A customer can have at most ${MAX_PETS_PER_CUSTOMER} pets` });
+    }
+    const row = await tx.pet.create({
+      data: {
+        ...(data as Prisma.PetUncheckedCreateInput),
+        organizationId: orgId,
+        customerId,
+        name: body.name,
+        species: body.species,
+        breed: body.breed,
+      },
+      include: withVaccines,
     });
+    await this.audRecord(actor, orgId, "pet.create", "pet", row.id, null, { ...this.auditShape(row), medicalNotesChanged: body.medicalNotes !== undefined }, ip, tx);
+    return row;
   }
 
   async createStaff(actor: PetActor, body: StaffPetCreate, ip: string | null): Promise<PetView> {
