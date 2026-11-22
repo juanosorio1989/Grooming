@@ -8,7 +8,7 @@ import { randomToken, sha256Hex } from "./crypto/tokens.js";
 import type { RequestMeta, Subject } from "./request-meta.js";
 
 export const REFRESH_TTL_MS: Record<Subject["type"], number> = {
-  CUSTOMER: 30 * 24 * 3600_000,
+  CUSTOMER: 90 * 24 * 3600_000,
   STAFF: 12 * 3600_000,
 };
 

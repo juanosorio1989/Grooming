@@ -119,6 +119,72 @@ describe("tenancy and flexible columns", () => {
   });
 });
 
+describe("customer_identity and outbox_event", () => {
+  const identity = (customerId: string, subject: string) =>
+    prisma.customerIdentity.create({
+      data: { organizationId: f.orgId, customerId, provider: "GOOGLE", subject, email: "ana@example.com" },
+    });
+
+  const otherCustomer = () =>
+    prisma.customer.create({
+      data: { organizationId: f.orgId, phoneE164: "+13055550112", name: "Cleo", locale: "en", createdVia: "ONLINE" },
+    });
+
+  it("allows one Google subject per organization (23505)", async () => {
+    await identity(f.customerId, "sub-1");
+    const other = await otherCustomer();
+    expect(await rejectionCode(identity(other.id, "sub-1"))).toBe("23505");
+  });
+
+  it("allows the same Google subject in another organization", async () => {
+    await identity(f.customerId, "sub-1");
+    const org2 = await prisma.organization.create({ data: { name: "Other", slug: "other-shop", defaultLocale: "en" } });
+    const c2 = await prisma.customer.create({
+      data: { organizationId: org2.id, phoneE164: "+13055550100", locale: "en", createdVia: "ONLINE" },
+    });
+    const row = await prisma.customerIdentity.create({
+      data: { organizationId: org2.id, customerId: c2.id, provider: "GOOGLE", subject: "sub-1", email: "ana@example.com" },
+    });
+    expect(row.subject).toBe("sub-1");
+  });
+
+  it("allows one Google account per customer (23505)", async () => {
+    await identity(f.customerId, "sub-1");
+    expect(await rejectionCode(identity(f.customerId, "sub-2"))).toBe("23505");
+  });
+
+  it("refuses to delete a customer that has an identity (23503)", async () => {
+    const c = await otherCustomer();
+    await identity(c.id, "sub-3");
+    const code = await rejectionCode(prisma.$executeRaw`DELETE FROM customer WHERE id = ${c.id}::uuid`);
+    expect(code).toBe("23503");
+  });
+
+  it("refuses to delete a customer that has an identity through Prisma (P2003)", async () => {
+    const c = await otherCustomer();
+    await identity(c.id, "sub-4");
+    const err = await prisma.customer.delete({ where: { id: c.id } }).then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    expect((err as { code?: string } | undefined)?.code).toBe("P2003");
+  });
+
+  it("inserts an unprocessed outbox event", async () => {
+    const row = await prisma.outboxEvent.create({
+      data: { organizationId: f.orgId, type: "google_link_notice", payload: { customerId: f.customerId } },
+    });
+    expect(row.processedAt).toBeNull();
+    expect(row.payload).toEqual({ customerId: f.customerId });
+  });
+
+  it("indexes outbox_event on (processed_at, created_at)", async () => {
+    const rows = await prisma.$queryRaw<{ indexdef: string }[]>`
+      SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'outbox_event'`;
+    expect(rows.some((r) => r.indexdef.includes("(processed_at, created_at)"))).toBe(true);
+  });
+});
+
 describe("partial indexes", () => {
   it("service_price_any_coat is unique on (service_id, size_class) for NULL coat rows only", async () => {
     const rows = await prisma.$queryRaw<{ indexdef: string }[]>`

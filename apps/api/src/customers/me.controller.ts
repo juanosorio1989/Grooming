@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Patch, Req } from "@nestjs/common";
 import type { Request } from "express";
 import { ZodValidationPipe } from "nestjs-zod";
-import { MePatchSchema, type AccessClaims, type CustomerView, type MePatch } from "@grooming/contracts";
+import { MePatchSchema, type AccessClaims, type MeView, type MePatch } from "@grooming/contracts";
 import { CustomerAuth, Principal } from "../auth/decorators.js";
 import { requestMeta } from "../auth/request-meta.js";
 import { CustomersService } from "./customers.service.js";
@@ -15,13 +15,13 @@ export class MeController {
 
   @CustomerAuth()
   @Get()
-  get(@Principal() p: AccessClaims): Promise<CustomerView> {
+  get(@Principal() p: AccessClaims): Promise<MeView> {
     return this.customers.getMe(p);
   }
 
   @CustomerAuth()
   @Patch()
-  patch(@Body(PatchPipe) body: MePatch, @Principal() p: AccessClaims, @Req() req: Request): Promise<CustomerView> {
+  patch(@Body(PatchPipe) body: MePatch, @Principal() p: AccessClaims, @Req() req: Request): Promise<MeView> {
     return this.customers.patchMe(p, body, requestMeta(req).ip);
   }
 }

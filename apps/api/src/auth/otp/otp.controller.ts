@@ -23,7 +23,7 @@ class OtpVerifyResponseDto extends createZodDto(OtpVerifyResponseSchema) {}
 export class OtpController {
   constructor(private readonly otp: OtpService) {}
 
-  /** Sends a login code to a US phone (WhatsApp, falling back to SMS). */
+  /** Sends a login code to a US phone over the channels in `OTP_CHANNELS`, in order. */
   @Public()
   @Post("start")
   @HttpCode(200)
@@ -32,7 +32,10 @@ export class OtpController {
     return this.otp.start({ phone: body.phone, locale: body.locale }, requestMeta(req).ip ?? "unknown");
   }
 
-  /** Checks the code, finds or creates the customer and starts a session (same transports as `/auth/refresh`). */
+  /**
+   * Checks the code, finds or creates the customer and starts a session (same transports as `/auth/refresh`).
+   * With a Google `linkTicket` (feature on), also links that Google account; see `identityLinked`.
+   */
   @Public()
   @Post("verify")
   @HttpCode(200)
@@ -42,6 +45,10 @@ export class OtpController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ): Promise<OtpVerifyResponse> {
-    return this.otp.verify({ phone: body.phone, code: body.code, locale: body.locale }, req, res);
+    return this.otp.verify(
+      { phone: body.phone, code: body.code, locale: body.locale, linkTicket: body.linkTicket },
+      req,
+      res,
+    );
   }
 }

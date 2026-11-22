@@ -1,6 +1,6 @@
 # Handoff
 
-Last update: 2026-11-21 · Plan 03 done on branch, merging
+Last update: 2026-11-22 · Plan 04a done on branch, final review fixes applied, awaiting owner OK to merge
 
 ## Done
 
@@ -8,12 +8,25 @@ Last update: 2026-11-21 · Plan 03 done on branch, merging
 - Plan 02 merged to `main`: `pricing`, `tracking` and the grooming `availability` planner
   (`docs/superpowers/plans/2026-11-18-mvp/02-domain-packages.md`). The final review fix wave
   (`513b997` kennel backtracking, `aea04fa` skip-ahead clamp) passed a scoped re-review.
-- Plan 03 done on branch `feat/mvp-03-catalog` (catalog, staff, pets, public reads, audit reader, seed; final
-  review fix wave applied), merging.
+- Plan 03 merged to `main` (PR #4): catalog, staff, pets, public reads, audit reader, seed.
+- Plan 04 split into 04a and 04b (owner-approved 2026-11-21). The owner confirmed the three Plan 02 decisions below.
+- Plan 04a done on branch `feat/mvp-04a-signin-availability`
+  (`docs/superpowers/plans/2026-11-18-mvp/04a-owner-signin-availability.md`): owner Google sign-in API
+  (nonce/ticket, link on OTP verify, Profile link/unlink, `/me` identities, outbox row, 90-day customer refresh),
+  `OTP_CHANNELS` (owner request, default `sms`), `GET /availability` (online, 7-day cap). Every task reviewed by
+  reviewer-opus; final branch review fix wave applied.
 
 ## Next
 
-- Write Plan 04 (booking API) in detail.
+- Owner OKs the 04a merge; push and merge to `main`.
+- Write Plan 04b (booking writes) in detail.
+
+## Blocked on the owner (before launch, not blocking code)
+
+- **WhatsApp:** no company/EIN yet (2026-11-21), so no Meta business verification and no WhatsApp sender in
+  Twilio Verify. OTP runs on SMS (`OTP_CHANNELS=sms`, the default); switch to `whatsapp,sms` once the sender is
+  active. Plan 06 visit notifications over WhatsApp need the same sender before real shops.
+- **Google production:** privacy-policy URL, production origin, Publish app; needs the domain and the Plan 07 web.
 
 ## Spec change 2026-11-20
 
@@ -29,8 +42,18 @@ Last update: 2026-11-21 · Plan 03 done on branch, merging
 
 ## Carry-over for later plans
 
-- Plan 04:
-  - cap the `/availability` date range (worst-case search is about 0.4–0.7 s per date) or add a precheck;
+- Plan 04b (see also the 04a plan's "Moved to Plan 04b"):
+  - from 04a: staff-mode availability + `excludeAppointmentId`; `DELETE /me` removes identity rows and the
+    customer's unprocessed outbox rows and must lock the customer row (`FOR UPDATE`) so a racing Profile link
+    cannot leave an identity on a deleted customer; export lists linked identities;
+  - from 04a: `/availability` CPU budget — worst case ~0.4–0.7 s per date × 7 dates runs synchronously on the event
+    loop for anonymous callers (120 req / 10 min / IP). Decide a per-request time budget, a lower anonymous limit,
+    a concurrency cap or a worker thread; at least log search time;
+  - from 04a: reject a soft-deleted customer's token in `/availability` pet resolution (with the other deleted-customer checks);
+  - from 04a: decide link-notice `notify` inside the verify transaction (today a read just before it);
+  - from 04a (tests): `linkInTx` `count === 0` path, `isNew` on a new-phone link, deleted customer + ticket,
+    Profile-link outbox payload, busy-range edges (`endsAt < from < blockEndsAt`), `STAGE_RESOURCE_MISMATCH` and
+    missing `coatType` on `/availability`; move `FIXTURE_SETTINGS` out of `test/integration/helpers.ts` for unit tests;
   - DTOs validate integer ms (NaN makes `validatePlan` throw);
   - decide whether to grid-check segments after the first;
   - kennel holds past local midnight (STAFF late drop-off);
@@ -52,11 +75,13 @@ Last update: 2026-11-21 · Plan 03 done on branch, merging
   - test the untested step paths (SKIP on DONE/SKIPPED, START on an unknown stage, READY with nothing open);
   - document one `PlannedStage` per stage;
   - `visit_step.client_ref` only deduplicates the latest write; decide whether offline needs a per-write log.
+- Plan 07 (from 04a, accept or polish): feature-off routes answer 400/401 before 404; empty `Authorization`
+  counts as anonymous on `/availability`; `"unknown"` client IPs share one rate-limit bucket.
 - Availability hardening (any plan that touches it):
   - add the kennel-backtrack drop-off input to `validate-plan.test.ts` "accepts every slot";
   - key the `freeKeys` memo in `search.ts` by map kind (`e:`/`r:`) as well as id.
 
-## Decisions made during Plan 02 (owner to check)
+## Decisions made during Plan 02 (owner confirmed 2026-11-21)
 
 - In wait mode, the first pet's first segment starts exactly at the slot time. Later pets start at or after it, with no idle limit.
 - `validateSteps` ignores SKIPPED steps that never started (a skip ahead is valid at any time).

@@ -294,6 +294,12 @@ enum PaymentMethod {
   @@map("payment_method")
 }
 
+enum IdentityProvider {
+  GOOGLE
+
+  @@map("identity_provider")
+}
+
 // ---------------------------------------------------------------- tenancy
 
 model Organization {
@@ -304,30 +310,32 @@ model Organization {
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  locations         Location[]
-  staffUsers        StaffUser[]
-  customers         Customer[]
-  serviceCategories ServiceCategory[]
-  services          Service[]
-  resourceTypes     ResourceType[]
-  appointments      Appointment[]
-  notificationLogs  NotificationLog[]
-  auditLogs         AuditLog[]
-  resources         Resource[]
-  segments          AppointmentSegment[]
-  workingHours      WorkingHours[]
-  timeOff           TimeOff[]
-  consents          NotificationConsent[]
-  pets              Pet[]
-  petVaccines       PetVaccine[]
-  media             Media[]
-  servicePrices     ServicePrice[]
-  petVisits         PetVisit[]
-  petVisitServices  PetVisitService[]
-  visitSteps        VisitStep[]
-  visitObservations VisitObservation[]
-  visitReports      VisitReport[]
-  paymentRecords    PaymentRecord[]
+  locations          Location[]
+  staffUsers         StaffUser[]
+  customers          Customer[]
+  serviceCategories  ServiceCategory[]
+  services           Service[]
+  resourceTypes      ResourceType[]
+  appointments       Appointment[]
+  notificationLogs   NotificationLog[]
+  auditLogs          AuditLog[]
+  resources          Resource[]
+  segments           AppointmentSegment[]
+  workingHours       WorkingHours[]
+  timeOff            TimeOff[]
+  consents           NotificationConsent[]
+  pets               Pet[]
+  petVaccines        PetVaccine[]
+  media              Media[]
+  servicePrices      ServicePrice[]
+  petVisits          PetVisit[]
+  petVisitServices   PetVisitService[]
+  visitSteps         VisitStep[]
+  visitObservations  VisitObservation[]
+  visitReports       VisitReport[]
+  paymentRecords     PaymentRecord[]
+  customerIdentities CustomerIdentity[]
+  outboxEvents       OutboxEvent[]
 
   @@map("organization")
 }
@@ -596,9 +604,32 @@ model Customer {
   appointments     Appointment[]
   notificationLogs NotificationLog[]
   pets             Pet[]
+  identities       CustomerIdentity[]
 
   @@unique([organizationId, phoneE164])
   @@map("customer")
+}
+
+/// External sign-in account linked to a customer (owner sign-in). Rows are
+/// deleted explicitly on `DELETE /me`; the FKs restrict deletes.
+model CustomerIdentity {
+  id             String           @id @default(uuid(7)) @db.Uuid
+  organizationId String           @map("organization_id") @db.Uuid
+  customerId     String           @map("customer_id") @db.Uuid
+  provider       IdentityProvider
+  /// Provider account id (Google `sub`). Never logged or audited.
+  subject        String
+  /// Refreshed on each sign-in with this provider.
+  email          String
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  customer     Customer     @relation(fields: [customerId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, provider, subject])
+  @@unique([organizationId, customerId, provider])
+  @@map("customer_identity")
 }
 
 /// Append-only history; current state = latest row per (customer, channel).
@@ -1132,6 +1163,22 @@ model NotificationLog {
   @@index([customerId])
   @@index([organizationId])
   @@map("notification_log")
+}
+
+/// Transactional outbox: written in the same transaction as the change, read by workers.
+model OutboxEvent {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  type           String
+  payload        Json
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  processedAt    DateTime? @map("processed_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@index([processedAt, createdAt])
+  @@index([organizationId])
+  @@map("outbox_event")
 }
 
 /// Append-only; `at` is the event time.

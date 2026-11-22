@@ -63,6 +63,11 @@ optional: a new OWNER defaults to `en`; a reset keeps the stored locale unless
 you pass `--locale`. It refuses an email that belongs to a non-owner. The link
 is a one-time credential: do not paste it into chats or tickets.
 
+`OTP_CHANNELS` sets the order of channels for customer sign-in codes
+(comma-separated `whatsapp`, `sms`; default `sms`). Add `whatsapp` only once the
+WhatsApp sender is active in Twilio Verify (see
+[owner sign-in](../api/owner-sign-in.md#code-channels)).
+
 With `EMAIL_PROVIDER=console` (development), invite and password reset emails
 are not sent; the API logs them (recipient, subject and text with the link).
 API docs (Swagger UI): http://localhost:3001/v1/docs

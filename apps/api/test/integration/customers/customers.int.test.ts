@@ -127,11 +127,12 @@ describe("customers", () => {
     const token = await customerToken(ctx.app, { sub: f.customerId, org: f.orgId });
     const got = await call("get", "/v1/me", token);
     expect(got.status).toBe(200);
-    expect(got.body).toMatchObject({ id: f.customerId, locale: "es", name: "Ana" });
+    expect(got.body).toMatchObject({ id: f.customerId, locale: "es", name: "Ana", identities: [] });
     expect(got.body).not.toHaveProperty("privateNotes");
     const res = await call("patch", "/v1/me", token).send({ locale: "en" });
     expect(res.status).toBe(200);
     expect(res.body.locale).toBe("en");
+    expect(res.body.identities).toEqual([]);
     expect((await ctx.prisma.customer.findUniqueOrThrow({ where: { id: f.customerId } })).locale).toBe("en");
     expect(await ctx.prisma.auditLog.count({ where: { organizationId: f.orgId, action: "customer.update", actorType: "CUSTOMER", actorId: f.customerId } })).toBe(1);
     expect((await call("patch", "/v1/me", token).send({ privateNotes: "x" })).status).toBe(400);

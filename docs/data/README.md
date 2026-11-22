@@ -2,9 +2,9 @@
 
 Authority: [data-model.md](../superpowers/specs/2026-11-18-mvp-design/data-model.md)
 (statuses: [tracking.md](../superpowers/specs/2026-11-18-mvp-design/tracking.md)).
-Code: `apps/api/prisma/schema.prisma`, one squashed migration
-`apps/api/prisma/migrations/*_init`. Prisma models are PascalCase, mapped to
-the snake_case tables below.
+Code: `apps/api/prisma/schema.prisma`, migrations in
+`apps/api/prisma/migrations/` (the squashed `*_init`, then one folder per
+change). Prisma models are PascalCase, mapped to the snake_case tables below.
 
 Conventions: UUID v7 ids, `timestamptz(3)` in UTC, money in integer cents
 (USD), weights in integer grams, translatable text as jsonb `{ "en", "es" }`,
@@ -15,10 +15,16 @@ Every tenant table has `organization_id` with an `ON DELETE RESTRICT` FK.
 |---|---|
 | Tenancy | `organization`, `location` (`settings` jsonb), `location_hours`, `location_closure` |
 | Staff and auth | `staff_user`, `staff_recovery_code`, `staff_auth_token`, `staff_location`, `employee_profile` (`skills`), `employee_service`, `working_hours`, `time_off`, `refresh_token` |
-| Customers and pets | `customer`, `notification_consent`, `pet`, `pet_vaccine`, `media` |
+| Customers and pets | `customer`, `customer_identity`, `notification_consent`, `pet`, `pet_vaccine`, `media` |
 | Catalog and resources | `service_category`, `service`, `service_price`, `resource_type` (`kind` STATION/KENNEL), `resource` |
 | Appointments and visits | `appointment`, `pet_visit`, `pet_visit_service`, `appointment_segment`, `visit_step`, `visit_observation`, `visit_report`, `payment_record` |
-| Notifications and audit | `notification_log`, `audit_log` |
+| Notifications and audit | `notification_log`, `audit_log`, `outbox_event` |
+
+- `customer_identity`: a Google account linked to a customer (owner sign-in);
+  unique `(organization_id, provider, subject)` and `(organization_id,
+  customer_id, provider)`, FKs `ON DELETE RESTRICT`.
+- `outbox_event`: events written in the same transaction as the change and
+  read by workers (`processed_at` null until handled); index `(processed_at, created_at)`.
 
 Raw SQL in the init migration (not modelled by Prisma; tests in
 `apps/api/test/integration/booking-constraints.int.test.ts` and

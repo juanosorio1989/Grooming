@@ -20,6 +20,7 @@
     "postinstall": "prisma generate"
   },
   "dependencies": {
+    "@grooming/availability": "workspace:*",
     "@grooming/contracts": "workspace:*",
     "@grooming/datetime": "workspace:*",
     "@grooming/pricing": "workspace:*",

@@ -6,8 +6,10 @@ import type {
   CustomerPatch,
   CustomerQuery,
   CustomerView,
+  IdentityView,
   Locale,
   MePatch,
+  MeView,
   StaffCustomerView,
 } from "@grooming/contracts";
 import { AuditService } from "../audit/audit.service.js";
@@ -164,14 +166,24 @@ export class CustomersService {
     });
   }
 
-  async getMe(actor: AccessClaims): Promise<CustomerView> {
+  /** Linked sign-in accounts of a customer, for `MeView`. Never exposes the provider subject. */
+  private async identities(db: Prisma.TransactionClient, organizationId: string, customerId: string): Promise<IdentityView[]> {
+    const rows = await db.customerIdentity.findMany({
+      where: { organizationId, customerId },
+      select: { provider: true, email: true },
+      orderBy: { provider: "asc" },
+    });
+    return rows.map((r) => ({ provider: r.provider, email: r.email }));
+  }
+
+  async getMe(actor: AccessClaims): Promise<MeView> {
     const organizationId = await this.tenancy.getOrgId();
     const row = await this.prisma.customer.findFirst({ where: { id: actor.sub, organizationId, deletedAt: null } });
     if (!row) throw new NotFoundException("Customer not found");
-    return toView(row);
+    return { ...toView(row), identities: await this.identities(this.prisma, organizationId, row.id) };
   }
 
-  async patchMe(actor: AccessClaims, body: MePatch, ip: string | null): Promise<CustomerView> {
+  async patchMe(actor: AccessClaims, body: MePatch, ip: string | null): Promise<MeView> {
     const orgId = await this.tenancy.getOrgId();
     return this.prisma.$transaction(async (tx) => {
       const before = await tx.customer.findFirst({ where: { id: actor.sub, organizationId: orgId, deletedAt: null } });
@@ -189,7 +201,7 @@ export class CustomersService {
         { orgId, actorType: "CUSTOMER", actorId: actor.sub, action: "customer.update", entity: "customer", entityId: actor.sub, before: auditShape(before), after: auditShape(row), ip },
         tx,
       );
-      return toView(row);
+      return { ...toView(row), identities: await this.identities(tx, orgId, actor.sub) };
     });
   }
 }

@@ -179,12 +179,12 @@ describe("sessions: refresh rotation, transports, logout", () => {
     expect(results.map((r) => r.status).sort()).toEqual([200, 401]);
   });
 
-  it("staff refresh lives 12 h, customer refresh 30 d", async () => {
+  it("staff refresh lives 12 h, customer refresh 90 d", async () => {
     const staff = cookieToken(await login("staff", f.staffA));
     const customer = cookieToken(await login("customer", f.customerId));
     const near = (d: Date, ms: number) => expect(Math.abs(d.getTime() - (Date.now() + ms))).toBeLessThan(60_000);
     near((await row(staff))!.expiresAt, 12 * 3600_000);
-    near((await row(customer))!.expiresAt, 30 * 86400_000);
+    near((await row(customer))!.expiresAt, 90 * 86400_000);
   });
 
   it("staff access token carries the staff role", async () => {
