@@ -244,8 +244,8 @@ describe("GET /v1/availability", () => {
     expect(after).toContain("11:00");
   });
 
-  it("staff token → 403; malformed bearer → 401", async () => {
-    const staff = await staffToken(ctx.app, { sub: f.staffA, org: f.orgId, role: "OWNER" });
+  it("EMPLOYEE staff token → 403 (OWNER/RECEPTION use staff mode); malformed bearer → 401", async () => {
+    const staff = await staffToken(ctx.app, { sub: f.staffA, org: f.orgId, role: "EMPLOYEE" });
     expect((await get(q([inline()]), staff)).status).toBe(403);
     expect((await get(q([inline()]), "garbage")).status).toBe(401);
   });

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import { AvailabilityError, findSlots, type Slot } from "@grooming/availability";
 import type { AccessClaims, AvailabilityQuery, AvailabilityResponse } from "@grooming/contracts";
 import { addDays, datesInRange, localDayBoundsUtc } from "@grooming/datetime";
@@ -16,12 +16,25 @@ import { resolveBookingMode } from "./context-mapper.js";
 const PER_IP = [120, 600] as const;
 
 /**
- * Online slots for owners and anonymous visitors. Saved pets (`petId`) need
- * a customer token and must belong to that customer; inline pets (`ref`) work
- * for anyone. A token whose customer is soft-deleted is 401. Engine input
- * errors become 400, never 500. Reschedule (`excludeAppointmentId`, customer
- * token only): the pets come from that BOOKED appointment of the customer and
- * its own segments are not busy.
+ * Slots for owners, anonymous visitors and staff. The mode comes from the
+ * principal.
+ *
+ * Customer or anonymous (engine mode ONLINE): saved pets (`petId`) need a
+ * customer token and must belong to that customer; inline pets (`ref`) work
+ * for anyone. A token whose customer is soft-deleted is 401. The staff-only
+ * params `override` and `customerId` are 403. Reschedule
+ * (`excludeAppointmentId`, customer token only): the pets come from that
+ * BOOKED appointment of the customer and its own segments are not busy.
+ * Rate limited per client IP.
+ *
+ * Staff (OWNER or RECEPTION, engine mode STAFF, `override` from the query):
+ * no lead time, horizon or online-bookable checks, and no rate limit. Saved
+ * pets need `customerId` (400 on `customerId`) and must belong to that active
+ * customer; an unknown or deleted customer is 404. `excludeAppointmentId`
+ * may be any BOOKED appointment of the organization; `customerId` with it is
+ * 400 (the appointment already names the customer).
+ *
+ * Engine input errors become 400, never 500.
  */
 @Injectable()
 export class AvailabilityService {
@@ -36,13 +49,25 @@ export class AvailabilityService {
 
   async find(q: AvailabilityQuery, principal: AccessClaims | undefined, ip: string): Promise<AvailabilityResponse> {
     const exclude = q.excludeAppointmentId;
-    // Reschedule needs a customer token (a staff token never reaches this service: 403 at the guard).
+    const staff = principal?.typ === "staff";
+    // Staff-only params are refused, not ignored, for customers and anonymous visitors.
+    if (!staff && (q.override !== undefined || q.customerId !== undefined)) throw new ForbiddenException({ code: "FORBIDDEN" });
+    // Reschedule needs a token (customer or staff).
     if (exclude !== undefined && principal === undefined) throw new UnauthorizedException({ code: "UNAUTHORIZED" });
     // The schema refine already requires exactly one of `pets` and `excludeAppointmentId`.
     if (exclude === undefined && q.pets === undefined) throw fieldError("pets", "Required");
-    await this.rateLimit.enforce(`availability:ip:${this.rateLimit.hashKeyPart(ip)}`, ...PER_IP);
-    const { pets, labels } =
-      exclude !== undefined && principal !== undefined
+    if (staff && exclude !== undefined && q.customerId !== undefined) {
+      throw fieldError("customerId", "Not allowed with excludeAppointmentId");
+    }
+    if (staff && q.customerId === undefined && (q.pets ?? []).some((p) => "petId" in p)) {
+      throw fieldError("customerId", "Required with a saved pet (petId)");
+    }
+    if (!staff) await this.rateLimit.enforce(`availability:ip:${this.rateLimit.hashKeyPart(ip)}`, ...PER_IP);
+    const { pets, labels } = staff
+      ? exclude !== undefined
+        ? await this.staffRescheduledPets(exclude)
+        : await this.staffPets(q.pets ?? [], q.customerId ?? null)
+      : exclude !== undefined && principal !== undefined
         ? await this.rescheduledPets(exclude, principal)
         : await this.resolver.resolve(q.pets ?? [], principal?.sub ?? null);
 
@@ -60,10 +85,12 @@ export class AvailabilityService {
       rows.location.settings.defaultBookingMode,
     );
 
+    const mode = staff ? "STAFF" : "ONLINE";
+    const override = staff ? (q.override ?? false) : false;
     const slots: Slot[] = [];
     try {
       for (const date of datesInRange(q.from, to)) {
-        slots.push(...findSlots({ ...context, mode: "ONLINE", date, bookingMode, pets }));
+        slots.push(...findSlots({ ...context, mode, override, date, bookingMode, pets }));
       }
     } catch (err) {
       throw err instanceof AvailabilityError ? engineError(err) : err;
@@ -77,6 +104,28 @@ export class AvailabilityService {
     await assertActiveCustomer(this.prisma, orgId, principal.sub);
     const appt = await this.prisma.appointment.findFirst({
       where: { id: appointmentId, organizationId: orgId, customerId: principal.sub, status: "BOOKED" },
+      select: { id: true },
+    });
+    if (!appt) throw new NotFoundException({ code: "NOT_FOUND" });
+    return this.resolver.fromAppointment(appt.id);
+  }
+
+  /** Staff: entries resolved for `customerId`; an unknown or deleted customer is 404 (the resolver's 401 is for customer tokens). */
+  private async staffPets(entries: NonNullable<AvailabilityQuery["pets"]>, customerId: string | null): Promise<ResolvedPets> {
+    try {
+      return await this.resolver.resolve(entries, customerId);
+    } catch (err) {
+      // With a customerId the resolver's only 401 is `assertActiveCustomer`; without one no petId reaches it (400 above).
+      if (err instanceof UnauthorizedException) throw new NotFoundException({ code: "NOT_FOUND" });
+      throw err;
+    }
+  }
+
+  /** Staff: the pets of any BOOKED appointment of this organization (else 404), rebuilt with `fromAppointment`. */
+  private async staffRescheduledPets(appointmentId: string): Promise<ResolvedPets> {
+    const orgId = await this.tenancy.getOrgId();
+    const appt = await this.prisma.appointment.findFirst({
+      where: { id: appointmentId, organizationId: orgId, status: "BOOKED" },
       select: { id: true },
     });
     if (!appt) throw new NotFoundException({ code: "NOT_FOUND" });
