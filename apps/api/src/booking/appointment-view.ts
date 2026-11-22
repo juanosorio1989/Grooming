@@ -10,7 +10,7 @@ export const APPOINTMENT_VIEW_INCLUDE = {
       services: { orderBy: { id: "asc" }, select: { serviceId: true, priceCents: true, durationMin: true } },
       segments: {
         orderBy: [{ startsAt: "asc" }, { id: "asc" }],
-        select: { id: true, stage: true, staffUserId: true, resourceId: true, startsAt: true, endsAt: true },
+        select: { id: true, stage: true, staffUserId: true, resourceId: true, startsAt: true, endsAt: true, occupies: true },
       },
     },
   },
@@ -23,13 +23,18 @@ const iso = (d: Date | null) => (d ? d.toISOString() : null);
 /**
  * The appointment start every view, the cancel window and the reschedule audit use:
  * `dropOffAt` in drop-off mode, else the earliest work (non-KENNEL) segment start
- * (any segment when there is no work segment). Null when there is none.
+ * (any segment when there is no work segment). Only occupying segments count when
+ * there are any: a CANCELLED visit keeps its old, non-occupying rows after a
+ * reschedule, and those must not set the start. A fully cancelled appointment has
+ * no occupying segment, so all of them count. Null when there is none.
  */
 export function appointmentStartsAt(
   a: { bookingMode: "WAIT" | "DROP_OFF"; dropOffAt: Date | null },
-  segments: { stage: string; startsAt: Date }[],
+  all: { stage: string; startsAt: Date; occupies: boolean }[],
 ): Date | null {
   if (a.bookingMode === "DROP_OFF" && a.dropOffAt) return a.dropOffAt;
+  const live = all.filter((s) => s.occupies);
+  const segments = live.length > 0 ? live : all;
   const work = segments.filter((s) => s.stage !== "KENNEL");
   return (work.length > 0 ? work : segments).reduce<Date | null>((m, s) => (m === null || s.startsAt < m ? s.startsAt : m), null);
 }

@@ -132,7 +132,8 @@ clears it, staff bookings never set it, and every hold (live or released) has on
 | `POST /me/appointments/:id/reschedule` | 200 `AppointmentView` with the new times; body `{ "slot": <slot from /availability> }` (strict) |
 
 `startsAt` everywhere (list order, the 12 h rule, the cancel window, the audit) is the one the view shows
-(`appointmentStartsAt` in `appointment-view.ts`).
+(`appointmentStartsAt` in `appointment-view.ts`). Only occupying segments count when there are any, so the old rows
+a `CANCELLED` visit keeps after a reschedule never set the start; a fully cancelled appointment uses all its segments.
 
 **Change rule (cancel and reschedule):** only `BOOKED` (else 409 `CONFLICT`), and only while
 `now <= startsAt - settings.cancelWindowHours` (else 409 `OUTSIDE_CANCEL_WINDOW`).
@@ -142,7 +143,8 @@ clears it, staff bookings never set it, and every hold (live or released) has on
 org-scoped and locks it): conditional update from `BOOKED` (409 `CONFLICT` otherwise) to `CANCELLED` with
 `cancelled_at`, `cancel_reason` (`by.reason`; null for the owner), `cancelled_by` (`CUSTOMER` or `STAFF`),
 `manage_version + 1`; every segment `occupies = false`; every visit `CANCELLED`; outbox `appointment.cancelled`
-`{ appointmentId }`; audit `appointment.cancel` (`before { status }`, `after { status, reason }`). The slot is free
+`{ appointmentId }`; audit `appointment.cancel` (`before { status }`, `after { status, cancelledBy }`; the free-text
+reason stays in `cancel_reason`, never in the audit). The slot is free
 at once.
 
 **Reschedule:** the owner first asks `GET /availability?from=…&excludeAppointmentId=<id>` (see
@@ -150,7 +152,8 @@ at once.
 checked, then `replaceSlot(id, slot, { mode: "ONLINE", override: false, action: "appointment.reschedule", … })`.
 Pets and services cannot change; to change them the owner cancels and books again.
 
-`replaceSlot` (shared with the staff move): validated outside the transaction: pets rebuilt with
+`replaceSlot` (shared with the staff move): status first (not in the organization 404, not `BOOKED` 409 `CONFLICT`,
+before any slot check); then validated outside the transaction: pets rebuilt with
 `fromAppointment` (404; 409 `CONFLICT` for a pet not saved yet) → the slot must list those pets in the same order
 (400 `slot.pets`; an unknown pet is 400 `slot.pets.<i>`) → a slot more than 400 days away is 400 `slot.startsAt` → the
 context for the slot's local day plus one, without the appointment's own segments → the booking mode must match
@@ -195,7 +198,7 @@ is a lost race: the problem filter answers `409 SLOT_TAKEN` and logs the constra
 | `toAppointmentView` / `toStaffAppointmentView` / `APPOINTMENT_VIEW_INCLUDE` (`appointment-view.ts`) | Pure mapper from an appointment loaded with `APPOINTMENT_VIEW_INCLUDE` (visits by position with pet name, services, segments by start) to the owner or staff view. Throws on a visit without a saved pet (holds have their own view) |
 | `PetsService.createInTx(tx, actor, customerId, body, ip)` | `POST /me/pets` inside the caller's transaction: customer lock, size rule, 20-pet cap (409), `pet.create` audit. Returns `{ id }` |
 | `AppointmentsService.cancelInTx(tx, appt, by)` / `replaceSlot(id, slot, opts)` | Cancel and new times for a `BOOKED` appointment (see [Owner appointments](#owner-appointments)); shared with staff writes and account deletion |
-| `appointmentStartsAt(appt, segments)` (`appointment-view.ts`) | `dropOffAt` in drop-off mode, else the earliest work segment start: the one start rule for views, lists, the cancel window and audits |
+| `appointmentStartsAt(appt, segments)` (`appointment-view.ts`) | `dropOffAt` in drop-off mode, else the earliest work segment start among occupying segments (all segments when none occupies): the one start rule for views, lists, the cancel window and audits |
 | `assertActiveCustomer(db, orgId, customerId, lock?)` (`customers/active-customer.ts`) | 401 when the customer is missing, soft-deleted or in another organization. With `lock`, `FOR SHARE` or `FOR UPDATE` on the row |
 
 ## Busy segments

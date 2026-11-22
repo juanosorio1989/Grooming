@@ -101,7 +101,7 @@ export class PlanWriter {
         dropOffAt: true,
         estimatedReadyAt: true,
         petVisits: { where: { status: { not: "CANCELLED" } }, orderBy: { position: "asc" }, select: { id: true, petId: true } },
-        segments: { select: { stage: true, startsAt: true } },
+        segments: { select: { stage: true, startsAt: true, occupies: true } },
       },
     });
     if (!appt) throw new NotFoundException({ code: "NOT_FOUND" });

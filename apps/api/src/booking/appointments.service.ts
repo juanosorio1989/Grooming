@@ -104,7 +104,13 @@ export class AppointmentsService {
     // computed here with the shared rule, then only the chosen appointments are loaded in full.
     const light = await this.prisma.appointment.findMany({
       where: mineWhere(orgId, p.sub),
-      select: { id: true, status: true, bookingMode: true, dropOffAt: true, segments: { select: { stage: true, startsAt: true } } },
+      select: {
+        id: true,
+        status: true,
+        bookingMode: true,
+        dropOffAt: true,
+        segments: { select: { stage: true, startsAt: true, occupies: true } },
+      },
     });
     const cutoff = Date.now() - UPCOMING_GRACE_MS;
     const timed = light.map((a) => ({ id: a.id, status: a.status, start: appointmentStartsAt(a, a.segments)?.getTime() ?? 0 }));
@@ -205,8 +211,9 @@ export class AppointmentsService {
         action: "appointment.cancel",
         entity: "appointment",
         entityId: appt.id,
+        // No free-text reason here (staff can type anything); it is stored in cancel_reason.
         before: { status: "BOOKED" },
-        after: { status: "CANCELLED", reason: by.reason },
+        after: { status: "CANCELLED", cancelledBy: by.actorType },
         ip: by.ip,
       },
       tx,
@@ -216,7 +223,8 @@ export class AppointmentsService {
   /**
    * New times for a BOOKED appointment, from a slot the client got from
    * `/availability` with `excludeAppointmentId`. Callers check ownership (and,
-   * for owners, the window) first. Validated outside the transaction: pets
+   * for owners, the window) first. Status first: not in the organization 404,
+   * not BOOKED 409 CONFLICT (before any slot check). Validated outside the transaction: pets
    * rebuilt with `fromAppointment` (404/409), the slot must list those pets in
    * that order (400 `slot.pets`), the context loaded without the appointment's
    * own segments, booking mode, `validatePlan` (`verdictError`). Then one
@@ -228,6 +236,9 @@ export class AppointmentsService {
   async replaceSlot(id: string, view: SlotView, opts: ReplaceSlotOptions): Promise<AppointmentView> {
     const orgId = await this.tenancy.getOrgId();
     const location = await this.locations.getDefault();
+    const found = await this.prisma.appointment.findFirst({ where: { id, organizationId: orgId }, select: { status: true } });
+    if (!found) throw notFound();
+    if (found.status !== "BOOKED") throw notBooked();
     const { pets, labels } = await this.resolver.fromAppointment(id);
     const slot = slotFromView(view, labels);
     if (slot.pets.length !== pets.length || slot.pets.some((sp, i) => sp.petId !== pets[i]?.petId)) {

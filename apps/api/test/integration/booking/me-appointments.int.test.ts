@@ -2,6 +2,7 @@ import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppointmentViewSchema } from "@grooming/contracts";
 import { AvailabilityContextLoader } from "../../../src/availability/context-loader.js";
+import { AppointmentsService } from "../../../src/booking/appointments.service.js";
 import { createIntegrationApp, resetState } from "../app.js";
 import { FROM, local, seedBookableTuesday } from "../bookable-day.js";
 import { seedFixture, type Fixture } from "../helpers.js";
@@ -158,7 +159,8 @@ describe("/v1/me/appointments (owner list, detail, cancel, reschedule)", () => {
     expect(outbox[0]).toMatchObject({ organizationId: f.orgId, type: "appointment.cancelled", payload: { appointmentId: id } });
     const audit = await ctx.prisma.auditLog.findFirstOrThrow({ where: { action: "appointment.cancel" } });
     expect(audit).toMatchObject({ actorType: "CUSTOMER", actorId: f.customerId, entity: "appointment", entityId: id, before: { status: "BOOKED" } });
-    expect(audit.after).toEqual({ status: "CANCELLED", reason: null });
+    // No free-text reason in the audit (staff reasons can hold anything); it lives in cancel_reason.
+    expect(audit.after).toEqual({ status: "CANCELLED", cancelledBy: "CUSTOMER" });
 
     // The slot is free again.
     expect((await slots(token))[0]?.startsAt).toBe(res.body.startsAt);
@@ -260,6 +262,41 @@ describe("/v1/me/appointments (owner list, detail, cancel, reschedule)", () => {
     expect(after.segments).toEqual(original);
     expect(after.manageVersion).toBe(0);
     expect(await ctx.prisma.outboxEvent.count({ where: { type: "appointment.changed" } })).toBe(0);
+  });
+
+  it("two pets, visit 0 cancelled, reschedule later → startsAt (view, detail, list) is the new slot start, not the cancelled visit's old time", async () => {
+    await setWait();
+    const token = await ownerToken();
+    const rex = await ctx.prisma.pet.create({
+      data: { organizationId: f.orgId, customerId: f.customerId, name: "Rex", species: "DOG", breed: "Lab", sizeClass: "M", coatType: "CURLY" },
+    });
+    const id = await book(token, local("08:00"), [savedPet(), { petId: rex.id, serviceIds: [f.serviceId] }]);
+    const first = await ctx.prisma.petVisit.findFirstOrThrow({ where: { appointmentId: id, position: 0 } });
+    await ctx.prisma.petVisit.update({ where: { id: first.id }, data: { status: "CANCELLED" } });
+    await ctx.prisma.appointmentSegment.updateMany({ where: { petVisitId: first.id }, data: { occupies: false } });
+
+    const res = await availability({ excludeAppointmentId: id }, token);
+    expect(res.status).toBe(200);
+    const target = (res.body.slots as SlotView[]).find((s) => s.startsAt === local("11:00"))!;
+    expect(target.pets.map((p) => p.petId)).toEqual([rex.id]);
+    const moved = await reschedule(id, target, token);
+    expect(moved.status).toBe(200);
+    expect(moved.body.startsAt).toBe(local("11:00"));
+    expect((await detail(id, token)).body.startsAt).toBe(local("11:00"));
+    expect((await list(token)).body.map((a: { startsAt: string }) => a.startsAt)).toEqual([local("11:00")]);
+    // The cancelled visit keeps its old rows (not occupying).
+    expect(await ctx.prisma.appointmentSegment.count({ where: { petVisitId: first.id, occupies: false } })).toBe(1);
+  });
+
+  it("replaceSlot (staff move path) on a CANCELLED appointment → 409 CONFLICT before any slot check; unknown → 404", async () => {
+    const token = await ownerToken();
+    const id = await book(token);
+    const slot = (await slots(token))[1]!;
+    expect((await cancel(id, token)).status).toBe(200);
+    const svc = ctx.app.get(AppointmentsService);
+    const opts = { mode: "STAFF", override: false, action: "appointment.move", actorType: "STAFF", actorId: f.staffA, ip: null } as const;
+    await expect(svc.replaceSlot(id, slot as never, opts)).rejects.toMatchObject({ status: 409, response: { code: "CONFLICT" } });
+    await expect(svc.replaceSlot("0194b2a0-0000-7000-8000-000000000000", slot as never, opts)).rejects.toMatchObject({ status: 404 });
   });
 
   it("reschedule: 2 h ahead → 409 OUTSIDE_CANCEL_WINDOW; cancelled → 409 CONFLICT; another customer's → 404; slot of other pets → 400", async () => {
