@@ -11,7 +11,7 @@ const QueryPipe = new ZodValidationPipe(AvailabilityQuerySchema);
 
 class AvailabilityResponseDto extends createZodDto(AvailabilityResponseSchema) {}
 
-/** Online slots for anonymous visitors (inline pets) and signed-in owners (saved pets too). */
+/** Online slots for anonymous visitors (inline pets) and signed-in owners (saved pets too, and reschedule slots). */
 @Controller("availability")
 export class AvailabilityController {
   constructor(private readonly availability: AvailabilityService) {}
@@ -21,7 +21,8 @@ export class AvailabilityController {
   @ApiOkResponse({ type: AvailabilityResponseDto })
   @ApiQuery({ name: "from", required: false, description: "First date (YYYY-MM-DD)" })
   @ApiQuery({ name: "to", required: false, description: "Last date (YYYY-MM-DD)" })
-  @ApiQuery({ name: "pets", required: true, description: "URL-encoded JSON array of pets (petId or inline species, sizeClass, coatType; services; preferredGroomerId)" })
+  @ApiQuery({ name: "pets", required: false, description: "URL-encoded JSON array of pets (petId or inline species, sizeClass, coatType; services; preferredGroomerId). Required unless excludeAppointmentId is sent" })
+  @ApiQuery({ name: "excludeAppointmentId", required: false, description: "Reschedule: a BOOKED appointment of the signed-in customer; its pets are used and its own segments are not busy" })
   find(
     @Query(QueryPipe) q: AvailabilityQuery,
     @Principal() principal: AccessClaims | undefined,

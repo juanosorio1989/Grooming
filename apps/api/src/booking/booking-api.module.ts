@@ -8,15 +8,16 @@ import { BookingModule } from "./booking.module.js";
 import { HoldSweeper } from "./hold-sweeper.js";
 import { HoldsController } from "./holds.controller.js";
 import { HoldsService } from "./holds.service.js";
+import { MeAppointmentsController } from "./me-appointments.controller.js";
 
 /**
- * Booking routes (holds and confirm now; owner and staff writes later). Kept apart
+ * Booking routes (holds, confirm, owner appointments; staff writes later). Kept apart
  * from `BookingModule` (the core), which `AvailabilityModule` imports, so this
  * module can use the availability context loader without an import cycle.
  */
 @Module({
   imports: [BookingModule, AvailabilityModule, PetsModule, AuditModule],
-  controllers: [HoldsController, AppointmentsController],
+  controllers: [HoldsController, AppointmentsController, MeAppointmentsController],
   providers: [HoldsService, HoldSweeper, AppointmentsService],
   exports: [HoldsService, AppointmentsService],
 })

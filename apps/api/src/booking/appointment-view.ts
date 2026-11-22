@@ -21,16 +21,27 @@ export type AppointmentWithVisits = Prisma.AppointmentGetPayload<{ include: type
 const iso = (d: Date | null) => (d ? d.toISOString() : null);
 
 /**
- * Pure mapper for a booked (non-HELD) appointment. `startsAt` is `dropOffAt`
- * in drop-off mode, else the earliest work (non-KENNEL) segment start. Throws
+ * The appointment start every view, the cancel window and the reschedule audit use:
+ * `dropOffAt` in drop-off mode, else the earliest work (non-KENNEL) segment start
+ * (any segment when there is no work segment). Null when there is none.
+ */
+export function appointmentStartsAt(
+  a: { bookingMode: "WAIT" | "DROP_OFF"; dropOffAt: Date | null },
+  segments: { stage: string; startsAt: Date }[],
+): Date | null {
+  if (a.bookingMode === "DROP_OFF" && a.dropOffAt) return a.dropOffAt;
+  const work = segments.filter((s) => s.stage !== "KENNEL");
+  return (work.length > 0 ? work : segments).reduce<Date | null>((m, s) => (m === null || s.startsAt < m ? s.startsAt : m), null);
+}
+
+/**
+ * Pure mapper for a booked (non-HELD) appointment. `startsAt` is
+ * `appointmentStartsAt`. Throws
  * on a visit without a saved pet or an appointment without times: those are
  * holds, which have their own view.
  */
 export function toAppointmentView(row: AppointmentWithVisits): AppointmentView {
-  const segments = row.petVisits.flatMap((v) => v.segments);
-  const work = segments.filter((s) => s.stage !== "KENNEL");
-  const earliest = (work.length > 0 ? work : segments).reduce<Date | null>((m, s) => (m === null || s.startsAt < m ? s.startsAt : m), null);
-  const startsAt = row.bookingMode === "DROP_OFF" && row.dropOffAt ? row.dropOffAt : earliest;
+  const startsAt = appointmentStartsAt(row, row.petVisits.flatMap((v) => v.segments));
   if (startsAt === null) throw new Error(`toAppointmentView: appointment ${row.id} has no start time`);
   return {
     id: row.id,

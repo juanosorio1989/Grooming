@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from "@nestjs/common";
 import type { PetPlan, PetRequest, Slot } from "@grooming/availability";
 import { lookupPrice, type ServicePriceRow } from "@grooming/pricing";
 import { Prisma } from "@prisma/client";
+import { appointmentStartsAt } from "./appointment-view.js";
 
 /** Details of a pet not saved yet, kept in `pet_visit.pending_pet` until the booking is confirmed. */
 export type PendingPet = {
@@ -80,12 +81,13 @@ export class PlanWriter {
   }
 
   /**
-   * Reschedule/move: deletes the appointment's segments, inserts the slot's
-   * segments for the existing visits (matched by position), refreshes
-   * pet_visit_service snapshots, priceCentsQuoted, kennelResourceId,
-   * appointment.dropOffAt and estimatedReadyAt. Returns before/after times for
-   * the audit. `startsAt` is the drop-off time in drop-off mode, else the
-   * earliest work segment start. 404 when the appointment is not in `orgId`.
+   * Reschedule/move: deletes the segments of the live visits, inserts the slot's
+   * segments for them, refreshes pet_visit_service snapshots, priceCentsQuoted,
+   * kennelResourceId, appointment.dropOffAt and estimatedReadyAt. The live
+   * visits are the list `PetRequestResolver.fromAppointment` rebuilds the
+   * request from (not CANCELLED, position order), matched by index to
+   * `slot.pets`; a CANCELLED visit keeps its rows. Returns before/after times
+   * for the audit (`appointmentStartsAt`). 404 when the appointment is not in `orgId`.
    */
   async replace(
     tx: Prisma.TransactionClient,
@@ -98,7 +100,7 @@ export class PlanWriter {
         bookingMode: true,
         dropOffAt: true,
         estimatedReadyAt: true,
-        petVisits: { orderBy: { position: "asc" }, select: { id: true, position: true } },
+        petVisits: { where: { status: { not: "CANCELLED" } }, orderBy: { position: "asc" }, select: { id: true, petId: true } },
         segments: { select: { stage: true, startsAt: true } },
       },
     });
@@ -108,20 +110,16 @@ export class PlanWriter {
       throw new Error("PlanWriter.replace: the slot does not match the appointment's visits");
     }
 
-    const work = appt.segments.filter((s) => s.stage !== "KENNEL");
-    const earliest = (work.length > 0 ? work : appt.segments).reduce<Date | null>(
-      (min, s) => (min === null || s.startsAt < min ? s.startsAt : min),
-      null,
-    );
-    const beforeStart = appt.bookingMode === "DROP_OFF" && appt.dropOffAt ? appt.dropOffAt : earliest;
+    const beforeStart = appointmentStartsAt(appt, appt.segments);
     if (beforeStart === null) throw new Error("PlanWriter.replace: the appointment has no start time");
     const before = { startsAt: iso(beforeStart), readyAt: appt.estimatedReadyAt ? iso(appt.estimatedReadyAt) : null };
+    const visitIds = appt.petVisits.map((v) => v.id);
 
     // Old rows go first, so the new segments may overlap the old times.
-    await tx.appointmentSegment.deleteMany({ where: { appointmentId, organizationId: w.orgId } });
+    await tx.appointmentSegment.deleteMany({ where: { appointmentId, organizationId: w.orgId, petVisitId: { in: visitIds } } });
     for (const [position, plan] of w.slot.pets.entries()) {
       const visit = appt.petVisits[position];
-      if (!visit || visit.position !== position) throw new Error(`PlanWriter.replace: no visit at position ${position}`);
+      if (!visit || visit.petId !== plan.petId) throw new Error(`PlanWriter.replace: visit ${position} does not match the plan`);
       const request = requestFor(w.pets, position, plan);
       await tx.petVisit.update({
         where: { id: visit.id },

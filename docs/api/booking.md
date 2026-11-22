@@ -1,7 +1,7 @@
 # Booking
 
-The write path for holds, confirmations, reschedules and staff bookings (Plan 04b). Holds and confirm are served
-now; owner and staff writes come in later tasks. Routes live in `BookingApiModule`; the shared core in `BookingModule`
+The write path for holds, confirmations, reschedules and staff bookings (Plan 04b). Holds, confirm and owner
+appointments are served now; staff writes come in a later task. Routes live in `BookingApiModule`; the shared core in `BookingModule`
 (`apps/api/src/booking/`) is used by every booking write and `/availability`, so the plan a client gets is the plan
 the server re-checks.
 
@@ -116,6 +116,62 @@ drop-off mode, else the earliest work segment start), `dropOffAt`, `estimatedRea
 
 A staff merge moves the hold's visit to the target pet, so a hold whose pet was merged is confirmed with the target.
 
+## Owner appointments
+
+`@CustomerAuth()` on `/me/appointments` (no token 401, staff token 403, soft-deleted customer 401 on every route).
+Only the customer's own bookings in this organization are visible: another customer's, another organization's, a
+live hold or a released hold is 404 `NOT_FOUND`. Bookings are told apart from holds by `hold_expires_at`: confirm
+clears it, staff bookings never set it, and every hold (live or released) has one.
+
+| Route | Result |
+| --- | --- |
+| `GET /me/appointments?scope=upcoming` (default) | 200 `AppointmentView[]`: `BOOKED` or `IN_SHOP` with `startsAt >= now - 12 h`, ascending |
+| `GET /me/appointments?scope=past` | 200 `AppointmentView[]`: every other booking, descending by `startsAt`, at most 50 |
+| `GET /me/appointments/:id` | 200 `AppointmentView` |
+| `POST /me/appointments/:id/cancel` | 200 `AppointmentView` (status `CANCELLED`) |
+| `POST /me/appointments/:id/reschedule` | 200 `AppointmentView` with the new times; body `{ "slot": <slot from /availability> }` (strict) |
+
+`startsAt` everywhere (list order, the 12 h rule, the cancel window, the audit) is the one the view shows
+(`appointmentStartsAt` in `appointment-view.ts`).
+
+**Change rule (cancel and reschedule):** only `BOOKED` (else 409 `CONFLICT`), and only while
+`now <= startsAt - settings.cancelWindowHours` (else 409 `OUTSIDE_CANCEL_WINDOW`).
+
+**Cancel:** one transaction: release expired holds → lock the appointment `FOR UPDATE` → load it (404) → change rule
+→ `cancelInTx`. `cancelInTx(tx, appt, by)` (shared with staff cancel and account deletion; the caller loads the row
+org-scoped and locks it): conditional update from `BOOKED` (409 `CONFLICT` otherwise) to `CANCELLED` with
+`cancelled_at`, `cancel_reason` (`by.reason`; null for the owner), `cancelled_by` (`CUSTOMER` or `STAFF`),
+`manage_version + 1`; every segment `occupies = false`; every visit `CANCELLED`; outbox `appointment.cancelled`
+`{ appointmentId }`; audit `appointment.cancel` (`before { status }`, `after { status, reason }`). The slot is free
+at once.
+
+**Reschedule:** the owner first asks `GET /availability?from=…&excludeAppointmentId=<id>` (see
+[Availability](availability.md#reschedule-slots)) and sends one of those slots back. Ownership and the change rule are
+checked, then `replaceSlot(id, slot, { mode: "ONLINE", override: false, action: "appointment.reschedule", … })`.
+Pets and services cannot change; to change them the owner cancels and books again.
+
+`replaceSlot` (shared with the staff move): validated outside the transaction: pets rebuilt with
+`fromAppointment` (404; 409 `CONFLICT` for a pet not saved yet) → the slot must list those pets in the same order
+(400 `slot.pets`; an unknown pet is 400 `slot.pets.<i>`) → a slot more than 400 days away is 400 `slot.startsAt` → the
+context for the slot's local day plus one, without the appointment's own segments → the booking mode must match
+(400 `slot.bookingMode`) → `validatePlan` (`verdictError`). Then one transaction: release expired holds → lock the
+appointment `FOR UPDATE` → re-check `BOOKED` (409 `CONFLICT`) → `PlanWriter.replace` (old segments deleted, new ones
+inserted) → `booking_mode` from the slot, `manage_version + 1` → outbox `appointment.changed` `{ appointmentId }` →
+audit `appointment.reschedule` or `appointment.move` with `before { startsAt, readyAt }` and
+`after { startsAt, readyAt, override }`. A time someone else took meanwhile is 409 `SLOT_TAKEN`, either from
+`validatePlan` or from the exclusion constraint (`23P01`); in both cases the transaction rolls back and the old
+segments stay as they were.
+
+| Error | When |
+| --- | --- |
+| 400 `VALIDATION_FAILED` | Bad `scope`, bad id, body shape; slot pets not the appointment's (`slot.pets`); booking mode mismatch; slot out of range; a plan rejection other than the three `SLOT_TAKEN` ones |
+| 401 `UNAUTHORIZED` | No token; soft-deleted customer |
+| 403 | Staff token |
+| 404 `NOT_FOUND` | Unknown, another customer's or another organization's appointment; a hold |
+| 409 `CONFLICT` | Not `BOOKED` (already cancelled, in the shop, completed, no-show) |
+| 409 `OUTSIDE_CANCEL_WINDOW` | Less than `cancelWindowHours` before `startsAt` |
+| 409 `SLOT_TAKEN` | Reschedule onto a time that is no longer free |
+
 ## Write order
 
 Validate outside the transaction (load the context, `validatePlan`; a rejection goes through `verdictError`) →
@@ -132,12 +188,14 @@ is a lost race: the problem filter answers `409 SLOT_TAKEN` and logs the constra
 | `verdictError(reason)` | `EMPLOYEE_UNAVAILABLE`, `RESOURCE_UNAVAILABLE`, `TOO_SOON` → 409 `SLOT_TAKEN`; any other rejection → 400 `VALIDATION_FAILED`, `detail` = reason |
 | `engineError(err)` | Engine input errors → 400 (see [Availability](availability.md#errors)) |
 | `PlanWriter.insert(tx, appointmentId, write)` | For an existing appointment: one `pet_visit` per pet (`position` = index, size/coat snapshots, `pending_pet` or `pet_id`, preferred groomer or null, `kennel_resource_id` from the KENNEL segment, quoted price), `pet_visit_service` rows from the price matrix (`lookupPrice`), and one `appointment_segment` per planned segment (`service_id` only when the segment has one service, `staff_user_id` = employee, times and snapshots from the plan) |
-| `PlanWriter.replace(tx, appointmentId, write)` | Reschedule/move: deletes the segments, inserts the new ones for the visits matched by position, refreshes service snapshots (upsert; never deletes, so the slot must keep the same services), quoted price, kennel, `drop_off_at` and `estimated_ready_at`. Returns `before`/`after` `{ startsAt, readyAt }` for the audit |
+| `PlanWriter.replace(tx, appointmentId, write)` | Reschedule/move: deletes the segments of the live visits (not `CANCELLED`, position order: the same list `fromAppointment` returns, matched by index), inserts the new ones, refreshes service snapshots (upsert; never deletes, so the slot must keep the same services), quoted price, kennel, `drop_off_at` and `estimated_ready_at`. Returns `before`/`after` `{ startsAt, readyAt }` for the audit |
 | `HoldReleaseService.releaseExpired(tx, now, orgId?)` | HELD rows with `hold_expires_at <= now` (`FOR UPDATE SKIP LOCKED`, at most 500): `CANCELLED`, `cancel_reason` `HOLD_EXPIRED`, `cancelled_by` `SYSTEM`; segments `occupies = false`; visits `CANCELLED`. Returns the count |
 | `HoldReleaseService.release(tx, id, reason, by)` | The same for one HELD appointment; false when it is not HELD |
 | `HoldsService.loadUsable(tx, holdId, principal, { lock? })` | A `HELD` appointment of this organization the principal may use (ownership rule above), else 404. Does not check expiry. With `lock`, `FOR UPDATE` on the row first (confirm). Always used before `release`, which has no organization filter |
 | `toAppointmentView` / `toStaffAppointmentView` / `APPOINTMENT_VIEW_INCLUDE` (`appointment-view.ts`) | Pure mapper from an appointment loaded with `APPOINTMENT_VIEW_INCLUDE` (visits by position with pet name, services, segments by start) to the owner or staff view. Throws on a visit without a saved pet (holds have their own view) |
 | `PetsService.createInTx(tx, actor, customerId, body, ip)` | `POST /me/pets` inside the caller's transaction: customer lock, size rule, 20-pet cap (409), `pet.create` audit. Returns `{ id }` |
+| `AppointmentsService.cancelInTx(tx, appt, by)` / `replaceSlot(id, slot, opts)` | Cancel and new times for a `BOOKED` appointment (see [Owner appointments](#owner-appointments)); shared with staff writes and account deletion |
+| `appointmentStartsAt(appt, segments)` (`appointment-view.ts`) | `dropOffAt` in drop-off mode, else the earliest work segment start: the one start rule for views, lists, the cancel window and audits |
 | `assertActiveCustomer(db, orgId, customerId, lock?)` (`customers/active-customer.ts`) | 401 when the customer is missing, soft-deleted or in another organization. With `lock`, `FOR SHARE` or `FOR UPDATE` on the row |
 
 ## Busy segments

@@ -207,6 +207,29 @@ describe("booking core", () => {
       expect(appointment.dropOffAt).toEqual(at("14:00"));
       expect(appointment.estimatedReadyAt).toEqual(at("16:30"));
     });
+
+    it("replace matches the same visits as fromAppointment (CANCELLED skipped, position order) and keeps a cancelled visit's rows", async () => {
+      const appt = await createAppointment();
+      await ctx.prisma.$transaction((tx) => writer.insert(tx, appt.id, write()));
+      const first = await ctx.prisma.petVisit.findFirstOrThrow({ where: { appointmentId: appt.id, position: 0 } });
+      await ctx.prisma.petVisit.update({ where: { id: first.id }, data: { status: "CANCELLED" } });
+      await ctx.prisma.appointmentSegment.updateMany({ where: { petVisitId: first.id }, data: { occupies: false } });
+      const resolved = await ctx.app.get(PetRequestResolver).fromAppointment(appt.id);
+
+      const slot: Slot = {
+        start: ms("09:00"),
+        readyAt: ms("10:00"),
+        bookingMode: "DROP_OFF",
+        pets: [petPlan(pet2, ["09:15", "10:00"], { id: f.kennel2, from: "09:00", to: "12:00" })],
+      };
+      await ctx.prisma.$transaction((tx) =>
+        writer.replace(tx, appt.id, { orgId: f.orgId, locationId: f.locationId, slot, pets: resolved.pets, prices }),
+      );
+
+      const second = await ctx.prisma.petVisit.findFirstOrThrow({ where: { appointmentId: appt.id, position: 1 }, include: { segments: true } });
+      expect(second.segments.map((s) => s.startsAt.toISOString()).sort()).toEqual([at("09:00").toISOString(), at("09:15").toISOString()]);
+      expect(await ctx.prisma.appointmentSegment.count({ where: { petVisitId: first.id } })).toBe(2);
+    });
   });
 
   describe("PetRequestResolver.fromAppointment", () => {
