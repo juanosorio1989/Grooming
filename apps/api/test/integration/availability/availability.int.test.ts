@@ -184,6 +184,23 @@ describe("GET /v1/availability", () => {
     expect(missing.status).toBe(400);
   });
 
+  it('no pets → 400 on "pets"; excludeAppointmentId (reschedule) → 400 "not supported yet"; both → 400 on "pets"', async () => {
+    const paths = (res: { body: { errors?: { path: string }[] } }) => (res.body.errors ?? []).map((e) => e.path);
+    const missing = await get({ from: FROM });
+    expect(missing.status).toBe(400);
+    expect(missing.body.code).toBe("VALIDATION_FAILED");
+    expect(paths(missing)).toEqual(["pets"]);
+
+    const exclude = await get({ from: FROM, excludeAppointmentId: f.customerId });
+    expect(exclude.status).toBe(400);
+    expect(exclude.body.code).toBe("VALIDATION_FAILED");
+    expect(exclude.body.errors).toEqual([{ path: "excludeAppointmentId", message: "not supported yet" }]);
+
+    const both = await get(q([inline()], { excludeAppointmentId: f.customerId }));
+    expect(both.status).toBe(400);
+    expect(paths(both)).toEqual(["pets"]);
+  });
+
   it("from in year 9999 or 0050 → 400 VALIDATION_FAILED, not 500", async () => {
     for (const from of ["9999-12-31", "0050-01-01"]) {
       const res = await get(q([inline()], { from }));

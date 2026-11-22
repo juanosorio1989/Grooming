@@ -12,7 +12,9 @@
 | --- | --- |
 | `from` | `YYYY-MM-DD`, a local date in the location time zone; year 2000 to 9998, else 400 on `from` |
 | `to` | optional, defaults to `from`; same year range (2000 to 9998); `to >= from` and `to - from < 7` (`MAX_AVAILABILITY_DAYS`), else 400 on `to` |
-| `pets` | URL-encoded JSON array of 1 to 4 entries, at most 4000 characters; a non-JSON value is 400 on `pets` |
+| `pets` | URL-encoded JSON array of 1 to 4 entries, at most 4000 characters; a non-JSON value is 400 on `pets`. Required unless `excludeAppointmentId` is sent; sending both is 400 on `pets` |
+| `excludeAppointmentId` | optional id (reschedule: the pets come from that appointment). Not served yet: 400 on `excludeAppointmentId`, "not supported yet" |
+| `customerId`, `override` | optional, staff only (`override` is `"true"`/`"false"`). Parsed but not used yet |
 
 Express's default query parser has no nested objects, so `pets` is a JSON string. Unknown query keys are 400.
 
@@ -53,7 +55,7 @@ Instants are ISO 8601 UTC. `startsAt` is the first segment start in wait mode an
 
 | Case | Status | `code` |
 | --- | --- | --- |
-| Bad query (`pets` not JSON or too long, more than 4 pets, range over 7 days, unknown key) | 400 | `VALIDATION_FAILED` with `errors[].path` |
+| Bad query (`pets` missing, not JSON or too long, more than 4 pets, range over 7 days, unknown key, `excludeAppointmentId`) | 400 | `VALIDATION_FAILED` with `errors[].path` |
 | Saved pet without a token / bad token | 401 | `UNAUTHORIZED` |
 | Staff token | 403 | `FORBIDDEN` |
 | Saved pet of another customer, or deleted | 404 | `NOT_FOUND` |
@@ -64,4 +66,4 @@ Instants are ISO 8601 UTC. `startsAt` is the first segment start in wait mode an
 
 ## Rate limit
 
-`availability:ip:<hashKeyPart(ip)>`: 120 requests per 600 s per client IP (fixed window). It is consumed after the guard and query validation, before pets are looked up or the engine runs.
+`availability:ip:<hashKeyPart(ip)>`: 120 requests per 600 s per client IP (fixed window). It is consumed after the guard, query validation and the `pets`/`excludeAppointmentId` check, before pets are looked up or the engine runs.

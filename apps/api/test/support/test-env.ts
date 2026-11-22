@@ -9,6 +9,7 @@ const DATA_ENCRYPTION_KEY = randomBytes(32).toString("base64");
 
 /**
  * A valid test `Env` (fake OTP, console email, org `test-salon` as in `seedFixture`).
+ * The hold sweeper is off (`HOLD_SWEEPER_INTERVAL_MS=0`).
  * `GOOGLE_OAUTH_CLIENT_IDS` stays unset (Google sign-in off) unless a test overrides it.
  */
 export function testEnv(overrides: Record<string, string> = {}): Env {
@@ -22,6 +23,7 @@ export function testEnv(overrides: Record<string, string> = {}): Env {
     DATA_ENCRYPTION_KEY,
     OTP_PROVIDER: "fake",
     EMAIL_PROVIDER: "console",
+    HOLD_SWEEPER_INTERVAL_MS: "0",
     ...overrides,
   });
 }

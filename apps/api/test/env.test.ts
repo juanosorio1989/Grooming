@@ -172,4 +172,18 @@ describe("loadEnv", () => {
     expect(msg).not.toContain(base.JWT_PRIVATE_KEY_B64);
     expect(msg).not.toContain("short");
   });
+
+  it("HOLD_SWEEPER_INTERVAL_MS defaults to 60000, accepts 0 (off) and rejects negatives by name", () => {
+    expect(loadEnv(base).HOLD_SWEEPER_INTERVAL_MS).toBe(60000);
+    expect(loadEnv({ ...base, HOLD_SWEEPER_INTERVAL_MS: "0" }).HOLD_SWEEPER_INTERVAL_MS).toBe(0);
+    expect(loadEnv({ ...base, HOLD_SWEEPER_INTERVAL_MS: "1500" }).HOLD_SWEEPER_INTERVAL_MS).toBe(1500);
+    expect(errorOf(() => loadEnv({ ...base, HOLD_SWEEPER_INTERVAL_MS: "-1" }))).toBe("Invalid environment: HOLD_SWEEPER_INTERVAL_MS");
+    expect(errorOf(() => loadEnv({ ...base, HOLD_SWEEPER_INTERVAL_MS: "1.5" }))).toBe("Invalid environment: HOLD_SWEEPER_INTERVAL_MS");
+    // Above the setInterval limit Node fires every 1 ms.
+    expect(errorOf(() => loadEnv({ ...base, HOLD_SWEEPER_INTERVAL_MS: "2147483648" }))).toBe("Invalid environment: HOLD_SWEEPER_INTERVAL_MS");
+  });
+
+  it("testEnv turns the hold sweeper off", () => {
+    expect(testEnv().HOLD_SWEEPER_INTERVAL_MS).toBe(0);
+  });
 });

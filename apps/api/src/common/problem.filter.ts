@@ -2,6 +2,7 @@ import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus, Logge
 import type { Response } from "express";
 import { ZodValidationException } from "nestjs-zod";
 import { ErrorCode, ProblemSchema, type Problem } from "@grooming/contracts";
+import { pgSqlState } from "./pg-error.js";
 
 const STATUS_CODES: Record<number, ErrorCode> = {
   400: "VALIDATION_FAILED",
@@ -74,6 +75,10 @@ export class ProblemFilter implements ExceptionFilter {
         status,
         code: codeForStatus(status),
       };
+    }
+    // An exclusion violation (no_employee_overlap / no_resource_overlap) is a lost booking race, never a 500.
+    if (pgSqlState(exception) === "23P01") {
+      return { type: "about:blank", title: "Conflict", status: 409, code: "SLOT_TAKEN", detail: "That time was just taken" };
     }
     return { type: "about:blank", title: "Internal Server Error", status: 500, code: "INTERNAL" };
   }

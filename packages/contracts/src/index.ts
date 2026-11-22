@@ -11,3 +11,4 @@ export * from "./customers";
 export * from "./pets";
 export * from "./public";
 export * from "./availability";
+export * from "./booking";

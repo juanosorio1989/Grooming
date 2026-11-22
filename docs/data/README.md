@@ -25,6 +25,15 @@ Every tenant table has `organization_id` with an `ON DELETE RESTRICT` FK.
   customer_id, provider)`, FKs `ON DELETE RESTRICT`.
 - `outbox_event`: events written in the same transaction as the change and
   read by workers (`processed_at` null until handled); index `(processed_at, created_at)`.
+- `pet_visit` booking columns (migration `*_booking_writes`): `position`
+  (smallint, 0-based order of the pets in the appointment, unique
+  `(appointment_id, position)`), `coat_type_at_booking` (coat snapshot; existing
+  rows were backfilled from `pet.coat_type`, else `SMOOTH`, and `position` by
+  visit id order) and `pending_pet` (jsonb details of a pet not saved yet, while
+  the appointment is `HELD`; the pet is created on confirm). Raw SQL CHECK
+  `pet_visit_pet_or_pending`: `pet_id` or `pending_pet` is set (test in
+  `schema-integrity.int.test.ts`). To roll back by hand: drop the CHECK, the
+  unique index `pet_visit_appointment_id_position_key` and the three columns.
 
 Raw SQL in the init migration (not modelled by Prisma; tests in
 `apps/api/test/integration/booking-constraints.int.test.ts` and
@@ -36,6 +45,8 @@ Raw SQL in the init migration (not modelled by Prisma; tests in
 - `no_employee_overlap`: no two occupying segments of one person overlap
   (only rows with a `staff_user_id`; kennel segments have none).
 - `no_resource_overlap`: no two occupying segments on one station or kennel overlap.
+  A violation of either (SQLSTATE `23P01`) is a lost booking race: the API's
+  problem filter answers `409 SLOT_TAKEN`, never 500 (`apps/api/src/common/pg-error.ts`).
 - `service_price_any_coat`: one `NULL`-coat price row per service and size.
 
 Seed (`pnpm --filter @grooming/api db:seed`, idempotent): organization

@@ -33,6 +33,9 @@ export class AvailabilityService {
   ) {}
 
   async find(q: AvailabilityQuery, principal: AccessClaims | undefined, ip: string): Promise<AvailabilityResponse> {
+    // Reschedule availability (`excludeAppointmentId`, pets from that appointment) is not served yet.
+    if (q.excludeAppointmentId !== undefined) throw fieldError("excludeAppointmentId", "not supported yet");
+    if (q.pets === undefined) throw fieldError("pets", "Required");
     await this.rateLimit.enforce(`availability:ip:${this.rateLimit.hashKeyPart(ip)}`, ...PER_IP);
     const { pets, labels } = await this.resolvePets(q.pets, principal);
 
@@ -62,7 +65,7 @@ export class AvailabilityService {
 
   /** Engine pet requests in query order, and the response label for each engine pet id. */
   private async resolvePets(
-    entries: AvailabilityQuery["pets"],
+    entries: NonNullable<AvailabilityQuery["pets"]>,
     principal: AccessClaims | undefined,
   ): Promise<{ pets: PetRequest[]; labels: Map<string, PetLabel> }> {
     const ids = entries.flatMap((e) => ("petId" in e ? [e.petId] : []));
@@ -101,6 +104,10 @@ export class AvailabilityService {
     }
     return { pets, labels };
   }
+}
+
+function fieldError(path: string, message: string): BadRequestException {
+  return new BadRequestException({ code: "VALIDATION_FAILED", message: "Validation failed", errors: [{ path, message }] });
 }
 
 function engineError(err: AvailabilityError): BadRequestException {

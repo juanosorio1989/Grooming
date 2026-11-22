@@ -51,7 +51,7 @@ describe("customers", () => {
       data: { organizationId: f.orgId, locationId: f.locationId, customerId: f.customerId, status: "BOOKED", source: "ONLINE", bookingMode: "DROP_OFF" },
     });
     const pv = await ctx.prisma.petVisit.create({
-      data: { organizationId: f.orgId, appointmentId: visit.id, petId: f.petId, status: "BOOKED", sizeClassAtBooking: "M", priceCentsQuoted: 4000 },
+      data: { organizationId: f.orgId, appointmentId: visit.id, petId: f.petId, position: 0, status: "BOOKED", sizeClassAtBooking: "M", coatTypeAtBooking: "SMOOTH", priceCentsQuoted: 4000 },
     });
     const seg = (staffUserId: string, offsetDays: number) =>
       ctx.prisma.appointmentSegment.create({
@@ -78,7 +78,7 @@ describe("customers", () => {
       data: { organizationId: f.orgId, locationId: f.locationId, customerId: f.customerId, status: "CANCELLED", source: "ONLINE", bookingMode: "DROP_OFF" },
     });
     const pv = await ctx.prisma.petVisit.create({
-      data: { organizationId: f.orgId, appointmentId: visit.id, petId: f.petId, status: "BOOKED", sizeClassAtBooking: "M", priceCentsQuoted: 4000 },
+      data: { organizationId: f.orgId, appointmentId: visit.id, petId: f.petId, position: 0, status: "BOOKED", sizeClassAtBooking: "M", coatTypeAtBooking: "SMOOTH", priceCentsQuoted: 4000 },
     });
     await ctx.prisma.appointmentSegment.create({
       data: {
