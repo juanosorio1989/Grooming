@@ -23,7 +23,7 @@ class OtpVerifyResponseDto extends createZodDto(OtpVerifyResponseSchema) {}
 export class OtpController {
   constructor(private readonly otp: OtpService) {}
 
-  /** Sends a login code to a US phone (WhatsApp, falling back to SMS). */
+  /** Sends a login code to a US phone over the channels in `OTP_CHANNELS`, in order. */
   @Public()
   @Post("start")
   @HttpCode(200)

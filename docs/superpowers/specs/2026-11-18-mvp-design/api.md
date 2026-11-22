@@ -29,7 +29,7 @@ Contracts, edge cases, limits and audit in
 | GET | `/public/services` | + `species`, `stage`, `is_main`, price matrix rows |
 | GET | `/public/employees` | groomers bookable as "preferred" |
 | GET | `/public/breeds` | seeded list (EN/ES) for autocomplete |
-| GET | `/availability` | `mode` resolved server-side; body-style query `pets[]` (petId or inline `{species,sizeClass,coatType}`, services, preferredGroomerId); `excludeAppointmentId?` → `Slot[]` |
+| GET | `/availability` | `mode` resolved server-side; body-style query `pets[]` (petId or inline `{species,sizeClass,coatType}`, services, preferredGroomerId); `excludeAppointmentId?` → `{ bookingMode, slots }` (`excludeAppointmentId` and staff mode arrive in Plan 04b) |
 | POST | `/holds` | `{ slot, newPets? }` → `{ holdId, expiresAt }` |
 | GET | `/track/:token` | appointment + pet visits + steps + ETA + published reports |
 | GET | `/track/:token/stream` | SSE |

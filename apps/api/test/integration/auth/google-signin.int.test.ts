@@ -170,14 +170,6 @@ describe("Google sign-in (fake JWKS)", () => {
       ["nonce missing from token", async (a) => signIn(a, await google.sign({}))],
       ["nonce not issued", async (a) => signIn(a, await google.sign({ nonce: "never-issued-nonce-value" }))],
       [
-        "nonce reused (second sign-in with the same token)",
-        async (a, nonce) => {
-          const token = await google.sign({ nonce });
-          expect((await signIn(a, token)).status).toBe(200);
-          return signIn(a, token);
-        },
-      ],
-      [
         "no gr_gnonce cookie",
         async (_a, nonce) =>
           request(server())
@@ -205,6 +197,28 @@ describe("Google sign-in (fake JWKS)", () => {
       expect(res.headers["content-type"]).toMatch(/^application\/problem\+json/);
       expect(res.body.code).toBe("UNAUTHORIZED");
     });
+  });
+
+  it("nonce reused: replaying the token with the original cookie value → 401", async () => {
+    const customer = await createCustomer({ phone: "+13055550131" });
+    await linkIdentity(customer.id);
+    const agent = browser();
+    const nonceRes = await agent.post("/v1/auth/google/nonce").send({});
+    const nonce = nonceRes.body.nonce as string;
+    const cookie = cookieNamed(nonceRes, "gr_gnonce");
+    const value = /^gr_gnonce=([^;]+)/.exec(cookie ?? "")?.[1];
+    expect(value).toBeDefined();
+    const token = await google.sign({ nonce });
+    const send = () =>
+      request(server())
+        .post("/v1/auth/google")
+        .set("x-token-transport", "body")
+        .set("Cookie", `gr_gnonce=${value}`)
+        .send({ idToken: token });
+    expect((await send()).status).toBe(200);
+    const replay = await send();
+    expect(replay.status).toBe(401);
+    expect(replay.body.code).toBe("UNAUTHORIZED");
   });
 
   it("a failed token check does not consume the nonce", async () => {
@@ -261,6 +275,25 @@ describe("Google sign-in (fake JWKS)", () => {
       expect(res.status).toBe(401);
     }
     const res = await request(server()).post("/v1/auth/google").send({ idToken: "not-a-jwt" });
+    expect(res.status).toBe(429);
+    expect(res.body.code).toBe("RATE_LIMITED");
+  });
+
+  it("11th sign-in with the same sub in 10 min → 429 RATE_LIMITED (per-sub limit, after token verification)", async () => {
+    // The per-IP counter (10/600 s) would trip first, so it is reset between calls.
+    const resetIpCounter = async () => {
+      const keys = await ctx.redis.keys("rl:gauth:signin:ip:*");
+      if (keys.length > 0) await ctx.redis.del(...keys);
+    };
+    for (let i = 0; i < 10; i++) {
+      await resetIpCounter();
+      const agent = browser();
+      const res = await signIn(agent, await google.sign({ nonce: await getNonce(agent), sub: "g-sub-limit" }));
+      expect(res.status).toBe(200);
+    }
+    await resetIpCounter();
+    const agent = browser();
+    const res = await signIn(agent, await google.sign({ nonce: await getNonce(agent), sub: "g-sub-limit" }));
     expect(res.status).toBe(429);
     expect(res.body.code).toBe("RATE_LIMITED");
   });
