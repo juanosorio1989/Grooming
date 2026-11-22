@@ -72,8 +72,9 @@ deleted-customer `401` and the per-phone verify limit apply as before.
 
 ## Link notice (outbox)
 
-A link to a customer who existed before this verify, and every Profile link,
-writes one `outbox_event` row in the same transaction:
+A new link to a customer who existed before this verify, and every Profile link
+that creates a new link, writes one `outbox_event` row in the same transaction
+(re-linking an account already linked to this customer writes none):
 
 | Field | Value |
 | --- | --- |
