@@ -1,6 +1,6 @@
 # Handoff
 
-Last update: 2026-11-22 · Plan 04a done on branch, final review fixes applied, awaiting owner OK to merge
+Last update: 2026-11-22 · Plan 04a merged to `main` (PR #5, `dd2f54b`); writing Plan 04b on `feat/mvp-04b-booking-writes`
 
 ## Done
 
@@ -10,7 +10,7 @@ Last update: 2026-11-22 · Plan 04a done on branch, final review fixes applied, 
   (`513b997` kennel backtracking, `aea04fa` skip-ahead clamp) passed a scoped re-review.
 - Plan 03 merged to `main` (PR #4): catalog, staff, pets, public reads, audit reader, seed.
 - Plan 04 split into 04a and 04b (owner-approved 2026-11-21). The owner confirmed the three Plan 02 decisions below.
-- Plan 04a done on branch `feat/mvp-04a-signin-availability`
+- Plan 04a merged to `main` (PR #5, `dd2f54b`)
   (`docs/superpowers/plans/2026-11-18-mvp/04a-owner-signin-availability.md`): owner Google sign-in API
   (nonce/ticket, link on OTP verify, Profile link/unlink, `/me` identities, outbox row, 90-day customer refresh),
   `OTP_CHANNELS` (owner request, default `sms`), `GET /availability` (online, 7-day cap). Every task reviewed by
@@ -18,8 +18,7 @@ Last update: 2026-11-22 · Plan 04a done on branch, final review fixes applied, 
 
 ## Next
 
-- Owner OKs the 04a merge; push and merge to `main`.
-- Write Plan 04b (booking writes) in detail.
+- Write Plan 04b (booking writes) in detail on `feat/mvp-04b-booking-writes`, show the routing table, then execute.
 
 ## Blocked on the owner (before launch, not blocking code)
 
