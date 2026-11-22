@@ -100,6 +100,19 @@ describe("Profile link/unlink of a Google account", () => {
     expect(await ctx.prisma.customerIdentity.count()).toBe(0);
   });
 
+  it("a soft-deleted customer cannot link → 404 NOT_FOUND, no identity or outbox rows", async () => {
+    await ctx.prisma.customer.update({ where: { id: f.customerId }, data: { deletedAt: new Date() } });
+    try {
+      const res = await link(browser());
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe("NOT_FOUND");
+      expect(await ctx.prisma.customerIdentity.count({ where: { customerId: f.customerId } })).toBe(0);
+      expect(await ctx.prisma.outboxEvent.count()).toBe(0);
+    } finally {
+      await ctx.prisma.customer.update({ where: { id: f.customerId }, data: { deletedAt: null } });
+    }
+  });
+
   it("link the same account again → 204, no second outbox row", async () => {
     expect((await link(browser())).status).toBe(204);
     expect((await link(browser(), "g-sub-1", "new@gmail.com")).status).toBe(204);

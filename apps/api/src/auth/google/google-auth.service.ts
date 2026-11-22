@@ -113,8 +113,13 @@ export class GoogleAuthService {
     if (!(await this.bindings.consumeNonce(claims.nonce, req, res))) throw unauthorized();
 
     const orgId = await this.tenancy.getOrgId();
-    const outcome = await this.prisma.$transaction((tx) =>
-      this.links.linkInTx(tx, {
+    const outcome = await this.prisma.$transaction(async (tx) => {
+      const live = await tx.customer.findFirst({
+        where: { id: customerId, organizationId: orgId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!live) throw new NotFoundException({ code: "NOT_FOUND" });
+      return this.links.linkInTx(tx, {
         orgId,
         customerId,
         sub: claims.sub,
@@ -122,8 +127,8 @@ export class GoogleAuthService {
         name: claims.name ?? claims.givenName ?? null,
         notify: true,
         actorIp: requestMeta(req).ip,
-      }),
-    );
+      });
+    });
     if (outcome === "TAKEN") throw new ConflictException({ code: "IDENTITY_TAKEN" });
   }
 
