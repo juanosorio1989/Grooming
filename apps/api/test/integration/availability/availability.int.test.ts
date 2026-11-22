@@ -184,6 +184,14 @@ describe("GET /v1/availability", () => {
     expect(missing.status).toBe(400);
   });
 
+  it("from in year 9999 or 0050 → 400 VALIDATION_FAILED, not 500", async () => {
+    for (const from of ["9999-12-31", "0050-01-01"]) {
+      const res = await get(q([inline()], { from }));
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe("VALIDATION_FAILED");
+    }
+  });
+
   it("service with no price row for the pet's size → 400 NO_PRICE_FOR_PET", async () => {
     const res = await get(q([inline({ sizeClass: "XL" })]));
     expect(res.status).toBe(400);

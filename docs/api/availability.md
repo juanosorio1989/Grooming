@@ -10,8 +10,8 @@
 
 | Param | Rule |
 | --- | --- |
-| `from` | `YYYY-MM-DD`, a local date in the location time zone |
-| `to` | optional, defaults to `from`; `to >= from` and `to - from < 7` (`MAX_AVAILABILITY_DAYS`), else 400 on `to` |
+| `from` | `YYYY-MM-DD`, a local date in the location time zone; year 2000 to 9998, else 400 on `from` |
+| `to` | optional, defaults to `from`; same year range (2000 to 9998); `to >= from` and `to - from < 7` (`MAX_AVAILABILITY_DAYS`), else 400 on `to` |
 | `pets` | URL-encoded JSON array of 1 to 4 entries, at most 4000 characters; a non-JSON value is 400 on `pets` |
 
 Express's default query parser has no nested objects, so `pets` is a JSON string. Unknown query keys are 400.

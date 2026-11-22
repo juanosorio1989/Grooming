@@ -65,4 +65,11 @@ describe("AvailabilityQuerySchema", () => {
   it("unknown query key → rejected", () => {
     expect(issuePaths(query([inline()], { mode: "STAFF" }))).not.toBeNull();
   });
+
+  it("years outside 2000-9998 → issue on the date field", () => {
+    expect(issuePaths(query([inline()], { from: "0050-01-01" }))).toEqual(["from"]);
+    expect(issuePaths(query([inline()], { from: "9999-12-31" }))).toEqual(["from"]);
+    expect(issuePaths(query([inline()], { to: "9999-12-31" }))).toContain("to");
+    expect(issuePaths(query([inline()], { from: "2000-01-01" }))).toBeNull();
+  });
 });

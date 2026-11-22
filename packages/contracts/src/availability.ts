@@ -45,11 +45,17 @@ const PetsParamSchema = z
   })
   .pipe(PetsListSchema);
 
+/** Years the datetime helpers handle safely (0-99 map to the 1900s; `to + 1 day` must stay within 9999). */
+const AvailabilityDateSchema = IsoDateSchema.refine((d) => {
+  const year = Number(d.slice(0, 4));
+  return year >= 2000 && year <= 9998;
+}, "Date year must be between 2000 and 9998");
+
 const dayIndex = (d: string) => Date.parse(`${d}T00:00:00Z`) / 86_400_000;
 
 /** Query string: from, to? (defaults to from), pets = URL-encoded JSON array (≤ 4000 chars), 1..4 entries. */
 export const AvailabilityQuerySchema = z
-  .object({ from: IsoDateSchema, to: IsoDateSchema.optional(), pets: PetsParamSchema })
+  .object({ from: AvailabilityDateSchema, to: AvailabilityDateSchema.optional(), pets: PetsParamSchema })
   .strict()
   .superRefine((q, ctx) => {
     if (q.to === undefined) return;
