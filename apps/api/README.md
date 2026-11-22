@@ -83,11 +83,13 @@ Policies sit on the handler or the controller (handler wins), metadata key `auth
 - US only: a phone not starting with `+1`, or not NANP-shaped (`/^\+1[2-9]\d{2}[2-9]\d{6}$/`), is 400
   `VALIDATION_FAILED` with `errors: [{ path: "phone" }]`. Non-US NANP ranges are left to Twilio Geo Permissions
   and Fraud Guard.
-- `start` tries WhatsApp and falls back to SMS when WhatsApp is unavailable (`OtpProviderUnavailableError` or
-  any untyped error) or answers `OtpInvalidRecipientError` (a WhatsApp 400 can be a channel-config error such as
-  Twilio 60223); both failing → 503. `OtpInvalidRecipientError` from SMS → 400 `VALIDATION_FAILED` on `phone`.
-  `OtpProviderRateLimitedError` → 429 `RATE_LIMITED` on either channel, no fallback. On `verify`, a provider rate limit is 429
-  and any other provider failure 503.
+- `start` tries the channels in `OTP_CHANNELS` in order (default `sms`; see
+  [code channels](../../docs/api/owner-sign-in.md#code-channels)). Per channel: from `whatsapp`, an
+  unavailable provider (`OtpProviderUnavailableError` or any untyped error) or `OtpInvalidRecipientError` (a
+  WhatsApp 400 can be a channel-config error such as Twilio 60223) falls back to the next channel;
+  `OtpInvalidRecipientError` from `sms` is 400 `VALIDATION_FAILED` on `phone`. `OtpProviderRateLimitedError` on
+  any channel is 429 `RATE_LIMITED`, no fallback. All channels failing → 503. On `verify`, a provider rate limit
+  is 429 and any other provider failure 503.
 - `verify`: a wrong code is 400 `OTP_INVALID`. A correct code upserts the customer on `(organization_id,
   phone_e164)`: new rows get `locale` = request `locale` or the organization's `default_locale`, `created_via =
   ONLINE`; every login sets `phone_verified_at`. A soft-deleted customer is 401 `UNAUTHORIZED`. Writes audit
