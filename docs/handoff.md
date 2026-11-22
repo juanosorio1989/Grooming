@@ -1,6 +1,6 @@
 # Handoff
 
-Last update: 2026-11-21 · Plan 03 done on branch, merging
+Last update: 2026-11-21 · Plan 04a written, awaiting owner review
 
 ## Done
 
@@ -8,12 +8,15 @@ Last update: 2026-11-21 · Plan 03 done on branch, merging
 - Plan 02 merged to `main`: `pricing`, `tracking` and the grooming `availability` planner
   (`docs/superpowers/plans/2026-11-18-mvp/02-domain-packages.md`). The final review fix wave
   (`513b997` kennel backtracking, `aea04fa` skip-ahead clamp) passed a scoped re-review.
-- Plan 03 done on branch `feat/mvp-03-catalog` (catalog, staff, pets, public reads, audit reader, seed; final
-  review fix wave applied), merging.
+- Plan 03 merged to `main` (PR #4): catalog, staff, pets, public reads, audit reader, seed.
+- Plan 04 split into 04a and 04b (owner-approved 2026-11-21). The owner confirmed the three Plan 02 decisions below.
+- Plan 04a written on branch `feat/mvp-04a-signin-availability`:
+  `docs/superpowers/plans/2026-11-18-mvp/04a-owner-signin-availability.md`.
 
 ## Next
 
-- Write Plan 04 (booking API) in detail.
+- Owner reviews Plan 04a, then execute it subagent-driven (routing table in the plan).
+- After 04a merges, write Plan 04b (booking writes).
 
 ## Spec change 2026-11-20
 
@@ -29,8 +32,7 @@ Last update: 2026-11-21 · Plan 03 done on branch, merging
 
 ## Carry-over for later plans
 
-- Plan 04:
-  - cap the `/availability` date range (worst-case search is about 0.4–0.7 s per date) or add a precheck;
+- Plan 04b (04a takes only the `/availability` date-range cap; see the plan's "Moved to Plan 04b"):
   - DTOs validate integer ms (NaN makes `validatePlan` throw);
   - decide whether to grid-check segments after the first;
   - kennel holds past local midnight (STAFF late drop-off);
@@ -56,7 +58,7 @@ Last update: 2026-11-21 · Plan 03 done on branch, merging
   - add the kennel-backtrack drop-off input to `validate-plan.test.ts` "accepts every slot";
   - key the `freeKeys` memo in `search.ts` by map kind (`e:`/`r:`) as well as id.
 
-## Decisions made during Plan 02 (owner to check)
+## Decisions made during Plan 02 (owner confirmed 2026-11-21)
 
 - In wait mode, the first pet's first segment starts exactly at the slot time. Later pets start at or after it, with no idle limit.
 - `validateSteps` ignores SKIPPED steps that never started (a skip ahead is valid at any time).
