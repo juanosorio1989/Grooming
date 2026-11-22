@@ -62,7 +62,6 @@ export class AppointmentsService {
         select: { id: true, petId: true, pendingPet: true, sizeClassAtBooking: true, coatTypeAtBooking: true },
       });
       const savedIds = visits.flatMap((v) => (v.petId ? [v.petId] : []));
-      if (!(await this.lockLivePets(tx, orgId, p.sub, savedIds))) throw petUnavailable();
 
       // 3. Pending pets: a picked saved pet must be one of the matches, else the pet is created.
       const pending = visits.flatMap((v) => {
@@ -86,9 +85,13 @@ export class AppointmentsService {
         }
         used.add(choice);
       }
-      if (errors.length > 0) throw new BadRequestException({ code: "VALIDATION_FAILED", message: "Validation failed", errors });
       const chosen = pending.flatMap(({ pet }) => (usePets[pet.ref] ? [usePets[pet.ref]!] : []));
-      if (!(await this.lockLivePets(tx, orgId, p.sub, chosen))) throw petUnavailable();
+      // Saved and chosen pets are locked in one id-ordered statement, like PetMergeService, so a
+      // concurrent merge of two of them cannot deadlock with this booking.
+      const live = await this.lockLivePets(tx, orgId, p.sub, [...savedIds, ...chosen]);
+      if (savedIds.some((id) => !live.has(id))) throw petUnavailable();
+      if (errors.length > 0) throw new BadRequestException({ code: "VALIDATION_FAILED", message: "Validation failed", errors });
+      if (chosen.some((id) => !live.has(id))) throw petUnavailable();
 
       const actor: PetActor = { type: "CUSTOMER", claims: p };
       for (const { visit, pet } of pending) {
@@ -140,19 +143,19 @@ export class AppointmentsService {
   }
 
   /**
-   * `FOR SHARE` on the given pets when each is the customer's, in this
-   * organization and not deleted, so a concurrent delete or merge waits for
-   * the booking. False when any of them is not.
+   * `FOR SHARE`, in id order, on the given pets that are the customer's, in
+   * this organization and not deleted, so a concurrent delete or merge waits
+   * for the booking. Returns the ids that qualified.
    */
-  private async lockLivePets(tx: Prisma.TransactionClient, orgId: string, customerId: string, ids: string[]): Promise<boolean> {
+  private async lockLivePets(tx: Prisma.TransactionClient, orgId: string, customerId: string, ids: string[]): Promise<Set<string>> {
     const unique = [...new Set(ids)];
-    if (unique.length === 0) return true;
+    if (unique.length === 0) return new Set();
     const rows = await tx.$queryRaw<{ id: string }[]>`
       SELECT id FROM pet
       WHERE id IN (${Prisma.join(unique.map((id) => Prisma.sql`${id}::uuid`))})
         AND organization_id = ${orgId}::uuid AND customer_id = ${customerId}::uuid AND deleted_at IS NULL
       ORDER BY id
       FOR SHARE`;
-    return rows.length === unique.length;
+    return new Set(rows.map((r) => r.id));
   }
 }

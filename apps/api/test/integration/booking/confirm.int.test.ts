@@ -276,6 +276,24 @@ describe("POST /v1/appointments (confirm a hold)", () => {
     expect(bad.body.code).toBe("VALIDATION_FAILED");
   });
 
+  it('holdId "not-a-uuid" → 400 VALIDATION_FAILED', async () => {
+    const res = await confirm({ holdId: "not-a-uuid" }, await ownerToken());
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("VALIDATION_FAILED");
+  });
+
+  it("saved pet deleted and an invalid usePets choice → 409 PET_UNAVAILABLE first", async () => {
+    const token = await ownerToken();
+    const [slot] = await slots([savedPet(), { ...inlineQuery(), ref: "new-1" }], token);
+    expect(slot).toBeDefined();
+    const res = await holdReq({ pets: [savedPet(), newPet({ name: "Max" })], slot }, token);
+    expect(res.status).toBe(201);
+    await ctx.prisma.pet.update({ where: { id: f.petId }, data: { deletedAt: new Date() } });
+    const out = await confirm({ holdId: res.body.holdId, usePets: { "new-1": f.petId } }, token);
+    expect(out.status).toBe(409);
+    expect(out.body.code).toBe("PET_UNAVAILABLE");
+  });
+
   it("customer already at MAX_PETS_PER_CUSTOMER → 409 CONFLICT (the pet cap of POST /me/pets), appointment still HELD", async () => {
     const token = await ownerToken();
     await ctx.prisma.pet.createMany({

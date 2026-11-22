@@ -85,10 +85,13 @@ export class HoldsService {
     const slot = slotFromView(body.slot, labels);
     if (Math.abs(slot.start - Date.now()) > MAX_SLOT_DISTANCE_MS) throw fieldError("slot.startsAt", "Out of range");
     const day = utcToWall(slot.start, timezone).date;
+    const orgId = await this.tenancy.getOrgId();
+    // Only the principal's own HELD hold is left out of the busy segments; anything else excludes nothing.
+    const replaced = body.replaceHoldId === undefined ? null : await this.replaceable(this.prisma, orgId, body.replaceHoldId, principal);
     // One extra local day: kennel blocks can run past midnight.
     const { rows, context } = await this.loader.load(
       { from: new Date(localDayBoundsUtc(day, timezone).start), to: new Date(localDayBoundsUtc(addDays(day, 1), timezone).end) },
-      { excludeAppointmentId: body.replaceHoldId },
+      { excludeAppointmentId: replaced?.status === "HELD" ? replaced.id : undefined },
     );
     const requested = new Set(pets.flatMap((p) => p.serviceIds));
     const bookingMode = resolveBookingMode(rows.services.filter((s) => requested.has(s.id)), settings.defaultBookingMode);
@@ -107,12 +110,15 @@ export class HoldsService {
         ? { ref: p.ref, species: p.species, name: p.name, breed: p.breed, breedCode: p.breedCode ?? null, weightG: p.weightG ?? null }
         : null,
     );
-    const orgId = await this.tenancy.getOrgId();
     // A lost race on any segment is a 23P01 here, answered as 409 SLOT_TAKEN by the problem filter.
     return this.prisma.$transaction(async (tx) => {
       const now = new Date();
       await this.release.releaseExpired(tx, now, orgId);
-      if (body.replaceHoldId !== undefined) await this.releaseReplaced(tx, orgId, body.replaceHoldId, principal);
+      if (body.replaceHoldId !== undefined) {
+        // Re-read in the transaction: it may have expired (just released) or been confirmed since.
+        const row = await this.replaceable(tx, orgId, body.replaceHoldId, principal);
+        if (row.status === "HELD") await this.release.release(tx, row.id, "HOLD_RELEASED", "CUSTOMER");
+      }
       const expiresAt = new Date(now.getTime() + settings.holdMinutes * MINUTE);
       const appt = await tx.appointment.create({
         data: {
@@ -190,16 +196,23 @@ export class HoldsService {
   }
 
   /**
-   * `replaceHoldId`: an id that does not exist in this organization, or a hold
-   * of another customer, is 404. The principal's own appointment that is no
-   * longer HELD (expired and released, or released) is ignored: the client
-   * cannot know it expired. A HELD one is released (HOLD_RELEASED, CUSTOMER).
+   * `replaceHoldId`: an id that does not exist in this organization, or an
+   * appointment of another customer, is 404. The principal's own appointment
+   * is returned when it is HELD (to release) or CANCELLED (expired or
+   * released: ignored, the client cannot know it expired). Any other status
+   * (BOOKED, IN_SHOP, COMPLETED, NO_SHOW) is 404: a live booking is never
+   * replaced or left out of the busy segments.
    */
-  private async releaseReplaced(tx: Prisma.TransactionClient, orgId: string, id: string, principal: AccessClaims | undefined): Promise<void> {
-    const row = await tx.appointment.findFirst({ where: { id, organizationId: orgId }, select: { id: true, status: true, customerId: true } });
+  private async replaceable(
+    db: Prisma.TransactionClient,
+    orgId: string,
+    id: string,
+    principal: AccessClaims | undefined,
+  ): Promise<{ id: string; status: "HELD" | "CANCELLED" }> {
+    const row = await db.appointment.findFirst({ where: { id, organizationId: orgId }, select: { id: true, status: true, customerId: true } });
     if (!row || (row.customerId !== null && row.customerId !== principal?.sub)) throw notFound();
-    if (row.status !== "HELD") return;
-    await this.release.release(tx, row.id, "HOLD_RELEASED", "CUSTOMER");
+    if (row.status !== "HELD" && row.status !== "CANCELLED") throw notFound();
+    return { id: row.id, status: row.status };
   }
 
   /**

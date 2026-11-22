@@ -407,6 +407,29 @@ describe("/v1/holds", () => {
     expect(await ctx.prisma.appointment.count({ where: { organizationId: f.orgId } })).toBe(0);
   });
 
+  it("replaceHoldId = my BOOKED appointment → 404 and it stays BOOKED", async () => {
+    const token = await ownerToken();
+    const [slot] = await slots([savedPet()], token);
+    const mine = await hold({ pets: [savedPet()], slot }, token);
+    const confirmed = await auth(request(server()).post("/v1/appointments").send({ holdId: mine.body.holdId }), token);
+    expect(confirmed.status).toBe(201);
+    const { body } = await firstInline();
+    const res = await hold({ ...body, replaceHoldId: mine.body.holdId }, token);
+    expect(res.status).toBe(404);
+    expect(res.body.code).toBe("NOT_FOUND");
+    expect((await ctx.prisma.appointment.findUniqueOrThrow({ where: { id: mine.body.holdId } })).status).toBe("BOOKED");
+    expect(await ctx.prisma.appointment.count()).toBe(1);
+  });
+
+  it('holdId "not-a-uuid" → 400 on GET, DELETE and replaceHoldId', async () => {
+    const { body } = await firstInline();
+    expect((await view("not-a-uuid")).status).toBe(400);
+    expect((await cancel("not-a-uuid")).status).toBe(400);
+    const res = await hold({ ...body, replaceHoldId: "not-a-uuid" });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("VALIDATION_FAILED");
+  });
+
   it("replaceHoldId of another customer's released hold → 404", async () => {
     const token = await ownerToken();
     const [slot] = await slots([savedPet()], token);

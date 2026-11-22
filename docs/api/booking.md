@@ -43,10 +43,11 @@ outbox rows for holds.
 - **Expiry:** `GET` of an expired hold is 409 `HOLD_EXPIRED`. An expired hold never blocks a new one: the loader
   ignores it and the create transaction releases it first (`HOLD_EXPIRED`, by `SYSTEM`).
 - **`replaceHoldId`:** picking another time keeps one hold per visitor. The old hold's own segments do not block the
-  new slot; it is released (`HOLD_RELEASED`, by `CUSTOMER`) in the same transaction. An id that does not exist in
-  this organization, or belongs to another customer, is 404. The visitor's own appointment that is no longer `HELD`
-  (expired and released, or already released) is ignored and the new hold is created: the client cannot know it
-  expired.
+  new slot (it is looked up before the context loads, and only the visitor's own `HELD` hold is left out of the busy
+  segments); it is released (`HOLD_RELEASED`, by `CUSTOMER`) in the same transaction. An id that does not exist in
+  this organization, or belongs to another customer, is 404. The visitor's own `CANCELLED` appointment (expired and
+  released, or already released) is ignored and the new hold is created: the client cannot know it expired. Any other
+  status (`BOOKED`, `IN_SHOP`, `COMPLETED`, `NO_SHOW`) is 404: a live booking is never replaced.
 - **Matches:** with a customer token, each pending pet lists that customer's saved pets that may be the same animal:
   not deleted, same species, name equal ignoring case and surrounding spaces (`pet-matches.ts`, reused by confirm).
   Anonymous: `matches` is `[]`.
@@ -57,7 +58,7 @@ outbox rows for holds.
 | 400 `NO_PRICE_FOR_PET` and other engine codes | As in [Availability](availability.md#errors) |
 | 401 `UNAUTHORIZED` | `petId` without a token; soft-deleted customer |
 | 403 | Staff token |
-| 404 `NOT_FOUND` | Unknown, foreign, not `HELD` or not usable hold (`replaceHoldId`: unknown or another customer's only); another customer's or a deleted saved pet |
+| 404 `NOT_FOUND` | Unknown, foreign, not `HELD` or not usable hold (`replaceHoldId`: unknown, another customer's, or not `HELD`/`CANCELLED`); another customer's or a deleted saved pet |
 | 409 `SLOT_TAKEN` | `EMPLOYEE_UNAVAILABLE`, `RESOURCE_UNAVAILABLE`, `TOO_SOON`, or a lost race (`23P01`) |
 | 409 `HOLD_EXPIRED` | `GET` of an expired hold |
 | 429 `RATE_LIMITED` | 21st `POST` from one IP in 10 min |
@@ -84,8 +85,9 @@ Steps, in this order:
    The slot is free again at once.
 2. **Main transaction:** release expired holds → lock the customer `FOR UPDATE` (401 if deleted) → lock the hold
    `FOR UPDATE` and re-check it (`HELD`, usable, not expired). A concurrent confirm of the same hold waits here and
-   then gets 404. Every saved pet of the hold must still be the customer's and not deleted (locked `FOR SHARE`), else
-   409 `PET_UNAVAILABLE` and the hold stays `HELD`. The customer lock is `FOR UPDATE`, not `FOR SHARE`, because
+   then gets 404. Every saved pet of the hold must still be the customer's and not deleted, else 409
+   `PET_UNAVAILABLE` and the hold stays `HELD`. The saved pets and the `usePets` choices are locked `FOR SHARE` in one
+   id-ordered statement (the order `PetMergeService` uses), so a concurrent merge cannot deadlock with a confirm. The customer lock is `FOR UPDATE`, not `FOR SHARE`, because
    saving a pet locks the customer `FOR UPDATE` and two confirms upgrading a shared lock would deadlock.
 3. **Pending pets:** `usePets[ref]` must be one of that pet's matches (the same rule as `GET /holds/:id`) and not a
    pet already in the booking, and every key must be a `ref` of the hold; else 400 `VALIDATION_FAILED` with path
