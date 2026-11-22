@@ -890,6 +890,7 @@ model Appointment {
   estimatedReadyAt      DateTime?         @map("estimated_ready_at") @db.Timestamptz(3)
   checkedInAt           DateTime?         @map("checked_in_at") @db.Timestamptz(3)
   completedAt           DateTime?         @map("completed_at") @db.Timestamptz(3)
+  /// Set while HELD: raw SQL CHECK `appointment_held_has_expiry` (status <> HELD or set).
   holdExpiresAt         DateTime?         @map("hold_expires_at") @db.Timestamptz(3)
   confirmedByCustomerAt DateTime?         @map("confirmed_by_customer_at") @db.Timestamptz(3)
   manageVersion         Int               @default(0) @map("manage_version")

@@ -1,24 +1,11 @@
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AvailabilityResponseSchema } from "@grooming/contracts";
-import { addDays, todayIn, wallTimeToUtc, weekdayOf, type IsoDate } from "@grooming/datetime";
+import { addDays } from "@grooming/datetime";
 import { createIntegrationApp, resetState } from "../app.js";
+import { FROM, local, seedBookableTuesday, wall } from "../bookable-day.js";
 import { createPetVisit, seedFixture, type Fixture } from "../helpers.js";
 import { customerToken, staffToken } from "../tokens.js";
-
-const TZ = "America/New_York";
-const t = (hhmm: string) => new Date(`1970-01-01T${hhmm}:00.000Z`);
-
-/** The first Tuesday at least 3 days after today (New York): inside the 60-day horizon, past the 60-min lead time. */
-function nextTuesday(): IsoDate {
-  let d = addDays(todayIn(TZ, Date.now()), 3);
-  while (weekdayOf(d) !== 2) d = addDays(d, 1);
-  return d;
-}
-const FROM = nextTuesday();
-const local = (hhmm: string, date: IsoDate = FROM) => new Date(wallTimeToUtc(date, hhmm, TZ)).toISOString();
-const wall = (iso: string) =>
-  new Intl.DateTimeFormat("en-GB", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(iso));
 
 describe("GET /v1/availability", () => {
   let ctx: Awaited<ReturnType<typeof createIntegrationApp>>;
@@ -45,16 +32,7 @@ describe("GET /v1/availability", () => {
     ctx = await createIntegrationApp({ env: { TRUST_PROXY: "1" } });
     await resetState(ctx.prisma, ctx.redis);
     f = await seedFixture(ctx.prisma);
-    await ctx.prisma.locationHours.create({ data: { locationId: f.locationId, weekday: 2, opens: t("08:00"), closes: t("18:00") } });
-    await ctx.prisma.employeeProfile.create({ data: { staffUserId: f.staffA, displayName: "A", skills: ["BATHER"] } });
-    await ctx.prisma.employeeService.create({ data: { staffUserId: f.staffA, serviceId: f.serviceId } });
-    await ctx.prisma.staffLocation.create({ data: { staffUserId: f.staffA, locationId: f.locationId } });
-    await ctx.prisma.workingHours.create({
-      data: { organizationId: f.orgId, staffUserId: f.staffA, locationId: f.locationId, weekday: 2, startTime: t("08:00"), endTime: t("17:00") },
-    });
-    await ctx.prisma.servicePrice.create({
-      data: { organizationId: f.orgId, serviceId: f.serviceId, sizeClass: "M", coatType: null, durationMin: 60, priceCents: 4500 },
-    });
+    await seedBookableTuesday(ctx.prisma, f);
   });
 
   afterEach(async () => {
@@ -142,13 +120,16 @@ describe("GET /v1/availability", () => {
     expect(deleted.body.code).toBe("NOT_FOUND");
   });
 
-  it("deleted customer token with petId → 401", async () => {
+  it("deleted customer token with petId → 401; with inline pets only → 401", async () => {
     await setWait();
     const token = await ownerToken();
     await ctx.prisma.customer.update({ where: { id: f.customerId }, data: { deletedAt: new Date() } });
     const res = await get(q([{ petId: f.petId, serviceIds: [f.serviceId] }]), token);
     expect(res.status).toBe(401);
     expect(res.body.code).toBe("UNAUTHORIZED");
+    const inlineOnly = await get(q([inline()]), token);
+    expect(inlineOnly.status).toBe(401);
+    expect(inlineOnly.body.code).toBe("UNAUTHORIZED");
   });
 
   it('own pet with sizeClass null and no sizeClass in the query → 400 on "pets.0.sizeClass"; with "M" → 200', async () => {

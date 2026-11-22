@@ -145,7 +145,7 @@ describe("booking core", () => {
 
     it("insert with a pending pet stores pending_pet and pet_id null", async () => {
       const appt = await createAppointment({ status: "HELD", holdExpiresAt: new Date(Date.now() + 5 * MIN), customerId: null });
-      const pending = { ref: "new-1", name: "Luna", breed: "Beagle", breedCode: null, weightG: 12_000 };
+      const pending = { ref: "new-1", species: "DOG" as const, name: "Luna", breed: "Beagle", breedCode: null, weightG: 12_000 };
       const slot: Slot = { ...twoPetSlot(), pets: [petPlan("new-1", ["13:15", "14:15"], { id: f.kennel1, from: "13:00", to: "17:00" })], readyAt: ms("14:15") };
       await ctx.prisma.$transaction((tx) =>
         writer.insert(tx, appt.id, write({ slot, pets: [request("new-1", "SMOOTH")], petIds: [null], pendingPets: [pending] })),
@@ -220,6 +220,15 @@ describe("booking core", () => {
         [f.petId, { petId: f.petId }],
         [pet2, { petId: pet2 }],
       ]);
+    });
+
+    it("skips CANCELLED visits", async () => {
+      const appt = await createAppointment();
+      await ctx.prisma.$transaction((tx) => writer.insert(tx, appt.id, write()));
+      await ctx.prisma.petVisit.updateMany({ where: { appointmentId: appt.id, position: 0 }, data: { status: "CANCELLED" } });
+      const resolved = await ctx.app.get(PetRequestResolver).fromAppointment(appt.id);
+      expect(resolved.pets).toEqual([request(pet2, "SMOOTH")]);
+      expect([...resolved.labels.keys()]).toEqual([pet2]);
     });
 
     it("unknown appointment → 404", async () => {

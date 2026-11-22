@@ -221,3 +221,21 @@ describe("pet_visit booking columns", () => {
     expect(await rejectionCode(insertVisit(visit.appointmentId, f.petId, null, 0))).toBe("23505");
   });
 });
+
+describe("appointment hold expiry", () => {
+  /** Raw insert so the database, not Prisma, rejects the row. */
+  const insertAppointment = (status: string, holdExpiresAt: Date | null) =>
+    prisma.$executeRaw`
+      INSERT INTO appointment (id, organization_id, location_id, status, source, booking_mode, hold_expires_at, updated_at)
+      VALUES (gen_random_uuid(), ${f.orgId}::uuid, ${f.locationId}::uuid, ${status}::appointment_status, 'ONLINE',
+        'WAIT', ${holdExpiresAt}, now())`;
+
+  it("rejects a HELD appointment with no hold_expires_at (23514)", async () => {
+    expect(await rejectionCode(insertAppointment("HELD", null))).toBe("23514");
+  });
+
+  it("accepts a HELD appointment with an expiry and a BOOKED one without", async () => {
+    expect(await insertAppointment("HELD", new Date(Date.now() + 60_000))).toBe(1);
+    expect(await insertAppointment("BOOKED", null)).toBe(1);
+  });
+});

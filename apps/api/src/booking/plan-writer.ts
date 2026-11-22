@@ -4,7 +4,15 @@ import { lookupPrice, type ServicePriceRow } from "@grooming/pricing";
 import { Prisma } from "@prisma/client";
 
 /** Details of a pet not saved yet, kept in `pet_visit.pending_pet` until the booking is confirmed. */
-export type PendingPet = { ref: string; name: string; breed: string; breedCode: string | null; weightG: number | null };
+export type PendingPet = {
+  ref: string;
+  /** Needed to create the pet on confirm and to find same-species matches. */
+  species: PetRequest["species"];
+  name: string;
+  breed: string;
+  breedCode: string | null;
+  weightG: number | null;
+};
 
 /**
  * A validated plan to store. `slot.pets[i]`, `pets[i]`, `petIds[i]` and
@@ -120,6 +128,8 @@ export class PlanWriter {
         data: { priceCentsQuoted: plan.priceCents, kennelResourceId: kennelOf(plan) },
       });
       // Upsert keeps the rows (and their ids, which order the services when the request is rebuilt).
+      // It never deletes: the slot's services must equal the visit's existing services (reschedule
+      // and move rebuild the request from the appointment, so they cannot add or drop a service).
       for (const t of serviceTerms(w.prices, request)) {
         await tx.petVisitService.upsert({
           where: { petVisitId_serviceId: { petVisitId: visit.id, serviceId: t.serviceId } },

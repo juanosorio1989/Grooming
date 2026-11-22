@@ -34,6 +34,11 @@ Every tenant table has `organization_id` with an `ON DELETE RESTRICT` FK.
   `pet_visit_pet_or_pending`: `pet_id` or `pending_pet` is set (test in
   `schema-integrity.int.test.ts`). To roll back by hand: drop the CHECK, the
   unique index `pet_visit_appointment_id_position_key` and the three columns.
+- `appointment` hold expiry (migration `*_held_has_expiry`): raw SQL CHECK
+  `appointment_held_has_expiry`: a `HELD` row has `hold_expires_at` (test in
+  `schema-integrity.int.test.ts`). The migration first sets `hold_expires_at = now()`
+  on any `HELD` row without one (none expected), so the next sweep releases it. To
+  roll back by hand: drop the CHECK.
 
 Raw SQL in the init migration (not modelled by Prisma; tests in
 `apps/api/test/integration/booking-constraints.int.test.ts` and

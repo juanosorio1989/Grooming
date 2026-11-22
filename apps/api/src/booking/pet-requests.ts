@@ -77,8 +77,9 @@ export class PetRequestResolver {
 
   /**
    * The request of an existing appointment, rebuilt from its visits in
-   * position order: species from the pet, size and coat from the booking
-   * snapshot, services from `pet_visit_service`, preferred groomer or "ANY".
+   * position order (CANCELLED visits skipped): species from the pet, size and
+   * coat from the booking snapshot, services from `pet_visit_service`,
+   * preferred groomer or "ANY".
    * 404 when the appointment is not in this organization. Only appointments
    * whose visits all have a saved pet can be rebuilt (a hold with a pending
    * pet cannot): 409 CONFLICT otherwise.
@@ -90,6 +91,7 @@ export class PetRequestResolver {
       select: {
         customerId: true,
         petVisits: {
+          where: { status: { not: "CANCELLED" } },
           orderBy: { position: "asc" },
           select: {
             petId: true,
