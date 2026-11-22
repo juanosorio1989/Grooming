@@ -23,6 +23,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@grooming/availability':
+        specifier: workspace:*
+        version: link:../../packages/availability
       '@grooming/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts

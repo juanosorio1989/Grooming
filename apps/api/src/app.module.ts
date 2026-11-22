@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { AvailabilityModule } from "./availability/availability.module.js";
 import { AuditModule } from "./audit/audit.module.js";
 import { AuthModule } from "./auth/auth.module.js";
 import { CatalogModule } from "./catalog/catalog.module.js";
@@ -17,5 +18,5 @@ import { StaffModule } from "./staff/staff.module.js";
 import { SettingsModule } from "./settings/settings.module.js";
 import { TenancyModule } from "./tenancy/tenancy.module.js";
 
-@Module({ imports: [ConfigModule, PrismaModule, RedisModule, RateLimitModule, TenancyModule, LocationModule, AuditModule, MailModule, AuthModule, HealthModule, SettingsModule, ResourcesModule, CatalogModule, StaffModule, CustomersModule, PetsModule, PublicModule] })
+@Module({ imports: [ConfigModule, PrismaModule, RedisModule, RateLimitModule, TenancyModule, LocationModule, AuditModule, MailModule, AuthModule, HealthModule, SettingsModule, ResourcesModule, CatalogModule, StaffModule, CustomersModule, PetsModule, PublicModule, AvailabilityModule] })
 export class AppModule {}
