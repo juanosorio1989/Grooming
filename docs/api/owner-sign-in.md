@@ -9,7 +9,8 @@ Schemas live in `packages/contracts/src/auth.ts`. Code: `apps/api/src/auth/googl
 
 `GOOGLE_OAUTH_CLIENT_IDS` (comma-separated OAuth client IDs; the token `aud`
 must be one of them). Empty (the default in dev and tests) turns the feature
-off: both endpoints below return `404 NOT_FOUND`.
+off: both endpoints below return `404 NOT_FOUND`, and `/auth/otp/verify`
+ignores `linkTicket` and leaves `identityLinked` out of its response.
 
 ## Endpoints
 
@@ -20,6 +21,43 @@ off: both endpoints below return `404 NOT_FOUND`.
 
 An email match never links or signs in anyone. A failed token check does not
 consume the nonce; a nonce or ticket lookup always deletes it.
+
+## Ticket on `/auth/otp/verify`
+
+`POST /auth/otp/verify` takes an optional `linkTicket` (1..128; the body is
+strict, so a misspelled key is `400 VALIDATION_FAILED`). The response carries
+`identityLinked` only when a ticket was sent and the feature is on.
+
+| Case | Result |
+| --- | --- |
+| Wrong code, any ticket | normal OTP error; the ticket is **not** consumed |
+| Valid code, valid ticket, `sub` not linked anywhere | sign in; link; `identityLinked: true`; outbox row if the customer existed before this verify |
+| Valid code, `sub` already linked to this customer | sign in; identity email refreshed; `identityLinked: true`; no outbox row |
+| Valid code, ticket expired, unknown, reused, wrong or missing `gr_glink` cookie, or from another organization | sign in by phone; `identityLinked: false` |
+| Valid code, `sub` linked to another customer meanwhile, or this customer has another Google account | sign in by phone; `identityLinked: false` |
+
+A valid code always consumes the ticket. The customer find-or-create and the
+link run in one transaction (`IdentityLinkService.linkInTx` in
+`apps/api/src/auth/google/identity-link.service.ts`). The identity insert is
+`ON CONFLICT DO NOTHING`, so a verify that loses a race to link the same `sub`
+still signs in by phone instead of failing. On a link, `customer.email` and
+`customer.name` are set from Google only when they are empty. The
+deleted-customer `401` and the per-phone verify limit apply as before.
+
+## Link notice (outbox)
+
+A link to a customer who existed before this verify writes one `outbox_event`
+row in the same transaction:
+
+| Field | Value |
+| --- | --- |
+| `type` | `customer.identity_linked` |
+| `payload.customerId` | the customer |
+| `payload.googleEmail` | the Google account email (message body only) |
+| `payload.notifyEmail` | `customer.email` read before the link sets it; `null` when it was empty |
+
+A customer created in the same verify gets no row. Plan 06 adds the worker that
+sends the notice; until then rows accumulate.
 
 ## Cookies
 
@@ -49,5 +87,6 @@ Over the limit: `429 RATE_LIMITED`.
 ## Audit
 
 A sign-in of a linked account records `auth.customer.login` with
-`after: { method: "google", isNew }`. The Google `sub`, the ID token, the nonce,
+`after: { method: "google", isNew }`. A link records
+`auth.customer.identity_linked` with `after: { provider: "GOOGLE" }`. The Google `sub`, the ID token, the nonce,
 the ticket and the binding value are never logged or audited.

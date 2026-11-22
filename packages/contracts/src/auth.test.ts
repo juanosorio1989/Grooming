@@ -118,6 +118,8 @@ describe("OTP verify with a link ticket", () => {
     expect(OtpVerifyRequestSchema.safeParse({ ...verify, linkTicket: "a".repeat(129) }).success).toBe(false));
   it("rejects an empty linkTicket", () =>
     expect(OtpVerifyRequestSchema.safeParse({ ...verify, linkTicket: "" }).success).toBe(false));
+  it("rejects unknown keys (a misspelled linkticket is not dropped)", () =>
+    expect(OtpVerifyRequestSchema.safeParse({ ...verify, linkticket: "t" }).success).toBe(false));
   it("response accepts identityLinked", () =>
     expect(OtpVerifyResponseSchema.parse({ ...tokens, isNew: true, identityLinked: false }).identityLinked).toBe(false));
 });

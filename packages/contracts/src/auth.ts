@@ -25,7 +25,7 @@ export const OtpVerifyRequestSchema = z.object({
   locale: LocaleSchema.optional(),
   /** Google link ticket from `PHONE_REQUIRED`; ignored when Google sign-in is off. */
   linkTicket: z.string().min(1).max(128).optional(),
-});
+}).strict();
 export type OtpVerifyRequest = z.infer<typeof OtpVerifyRequestSchema>;
 
 export const TokenResponseSchema = z.object({

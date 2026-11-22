@@ -11,6 +11,9 @@ import {
 import type { Request, Response } from "express";
 import type { Locale, OtpStartResponse, OtpVerifyResponse } from "@grooming/contracts";
 import { AuditService } from "../../audit/audit.service.js";
+import { BrowserBindingStore, type LinkTicketData } from "../google/browser-binding.store.js";
+import { GoogleAuthService } from "../google/google-auth.service.js";
+import { IdentityLinkService, type LinkOutcome } from "../google/identity-link.service.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { RateLimitService } from "../../rate-limit/rate-limit.service.js";
 import { TenancyService } from "../../tenancy/tenancy.service.js";
@@ -40,6 +43,9 @@ const CHANNELS: readonly OtpChannel[] = ["whatsapp", "sms"];
  * `verify` checks it, finds or creates the customer and starts a session.
  * Phones appear in Redis keys only as `hashKeyPart(phone)`. Verifying a phone
  * is not consent to messages: no `notification_consent` rows are written here.
+ * With a Google link ticket (feature on), a valid code consumes the ticket and
+ * links the Google account in the same transaction that finds or creates the
+ * customer; a wrong code leaves the ticket untouched.
  */
 @Injectable()
 export class OtpService {
@@ -52,6 +58,9 @@ export class OtpService {
     private readonly sessions: SessionService,
     private readonly audit: AuditService,
     private readonly prisma: PrismaService,
+    private readonly google: GoogleAuthService,
+    private readonly bindings: BrowserBindingStore,
+    private readonly identityLink: IdentityLinkService,
   ) {}
 
   async start(req: { phone: string; locale: Locale }, ip: string): Promise<OtpStartResponse> {
@@ -75,7 +84,7 @@ export class OtpService {
   }
 
   async verify(
-    req: { phone: string; code: string; locale?: Locale },
+    req: { phone: string; code: string; locale?: Locale; linkTicket?: string },
     httpReq: Request,
     res: Response,
   ): Promise<OtpVerifyResponse> {
@@ -84,6 +93,14 @@ export class OtpService {
     if (!(await this.checkCode(req.phone, req.code))) throw new BadRequestException({ code: "OTP_INVALID" });
 
     const orgId = await this.tenancy.getOrgId();
+    // A valid code always consumes the ticket, whatever happens next.
+    const linkTicket = this.google.enabled ? req.linkTicket : undefined;
+    let ticket: LinkTicketData | null = null;
+    if (linkTicket !== undefined) {
+      const data = await this.bindings.consumeTicket(linkTicket, httpReq, res);
+      ticket = data && data.orgId === orgId ? data : null;
+    }
+
     const key = { organizationId_phoneE164: { organizationId: orgId, phoneE164: req.phone } };
     const existing = await this.prisma.customer.findUnique({ where: key, select: { deletedAt: true } });
     // A soft-deleted customer keeps the phone until plan 04 anonymization frees it.
@@ -91,17 +108,34 @@ export class OtpService {
 
     const now = new Date();
     const locale = req.locale ?? (await this.defaultLocale(orgId));
-    const customer = await this.prisma.customer.upsert({
-      where: key,
-      create: {
-        organizationId: orgId,
-        phoneE164: req.phone,
-        locale,
-        createdVia: "ONLINE",
-        phoneVerifiedAt: now,
-      },
-      update: { phoneVerifiedAt: now },
-      select: { id: true, name: true },
+    const ip = requestMeta(httpReq).ip;
+    const { customer, outcome } = await this.prisma.$transaction(async (tx) => {
+      const customer = await tx.customer.upsert({
+        where: key,
+        create: {
+          organizationId: orgId,
+          phoneE164: req.phone,
+          locale,
+          createdVia: "ONLINE",
+          phoneVerifiedAt: now,
+        },
+        update: { phoneVerifiedAt: now },
+        select: { id: true, name: true },
+      });
+      let outcome: LinkOutcome | null = null;
+      if (ticket) {
+        outcome = await this.identityLink.linkInTx(tx, {
+          orgId,
+          customerId: customer.id,
+          sub: ticket.sub,
+          email: ticket.email,
+          name: ticket.name,
+          // A customer created in this verify gets no link notice.
+          notify: existing !== null,
+          actorIp: ip,
+        });
+      }
+      return { customer, outcome };
     });
     const isNew = customer.name === null;
 
@@ -113,10 +147,11 @@ export class OtpService {
       entity: "customer",
       entityId: customer.id,
       after: { isNew },
-      ip: requestMeta(httpReq).ip,
+      ip,
     });
     const tokens = await this.sessions.start({ type: "CUSTOMER", id: customer.id }, httpReq, res);
-    return { ...tokens, isNew };
+    if (linkTicket === undefined) return { ...tokens, isNew };
+    return { ...tokens, isNew, identityLinked: outcome === "LINKED" || outcome === "ALREADY_LINKED" };
   }
 
   /** Provider rate limit → 429; any other provider failure → 503. */

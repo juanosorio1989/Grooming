@@ -11,6 +11,7 @@ import { GoogleAuthController } from "./google/google-auth.controller.js";
 import { GoogleAuthService } from "./google/google-auth.service.js";
 import { GoogleIdTokenVerifier } from "./google/google-id-token.js";
 import { GOOGLE_JWKS, googleJwksFactory } from "./google/google-jwks.js";
+import { IdentityLinkService } from "./google/identity-link.service.js";
 import { ConsoleOtpProvider } from "./otp/console-otp.provider.js";
 import { FakeOtpProvider } from "./otp/fake-otp.provider.js";
 import { OTP_PROVIDER, type OtpProvider } from "./otp/otp-provider.js";
@@ -61,6 +62,7 @@ function otpProviderFactory(env: Env, redis: Redis): OtpProvider {
     GoogleIdTokenVerifier,
     BrowserBindingStore,
     GoogleAuthService,
+    IdentityLinkService,
     { provide: GOOGLE_JWKS, useFactory: googleJwksFactory },
     {
       provide: Encryptor,
@@ -79,6 +81,7 @@ function otpProviderFactory(env: Env, redis: Redis): OtpProvider {
     GoogleIdTokenVerifier,
     BrowserBindingStore,
     GoogleAuthService,
+    IdentityLinkService,
   ],
 })
 export class AuthModule {}
