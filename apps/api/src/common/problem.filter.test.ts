@@ -1,6 +1,6 @@
-import type { ArgumentsHost } from "@nestjs/common";
+import { type ArgumentsHost, Logger } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { pgSqlState } from "./pg-error.js";
 import { ProblemFilter } from "./problem.filter.js";
 
@@ -41,6 +41,17 @@ describe("ProblemFilter", () => {
     expect(r.body).toMatchObject({ status: 409, code: "SLOT_TAKEN" });
   });
 
+  it("logs the violated constraint name on 23P01 → 409", () => {
+    const warn = vi.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined);
+    try {
+      run(exclusionError());
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0]?.[0]).toBe("SLOT_TAKEN: exclusion constraint no_employee_overlap");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("keeps other unknown Prisma errors as 500 INTERNAL", () => {
     const err = new Prisma.PrismaClientUnknownRequestError('PostgresError { code: "23514" }', { clientVersion: "6.19.3" });
     expect(run(err)).toMatchObject({ status: 500, body: { code: "INTERNAL" } });
@@ -59,5 +70,12 @@ describe("pgSqlState", () => {
     expect(pgSqlState(undefined)).toBeUndefined();
     expect(pgSqlState("23P01")).toBeUndefined();
     expect(pgSqlState(new Error("boom"))).toBeUndefined();
+  });
+
+  it("reads the message only for Prisma errors", () => {
+    expect(pgSqlState(new Error('PostgresError { code: "23P01" }'))).toBeUndefined();
+    expect(pgSqlState({ message: 'code: "23P01"' })).toBeUndefined();
+    const known = new Prisma.PrismaClientKnownRequestError('PostgresError { code: "23514" }', { code: "P2010", clientVersion: "6.19.3" });
+    expect(pgSqlState(known)).toBe("23514");
   });
 });

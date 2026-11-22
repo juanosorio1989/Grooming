@@ -4,7 +4,7 @@
 
 ## Auth
 
-`@OptionalCustomerAuth()`: no `Authorization` header means an anonymous visitor. When the header is sent, it must be a valid customer token for this organization: a bad or foreign token is 401, a staff token is 403 (staff mode comes in Plan 04b).
+`@OptionalCustomerAuth()`: no `Authorization` header means an anonymous visitor. When the header is sent, it must be a valid customer token for this organization: a bad or foreign token is 401, a staff token is 403 (staff mode comes in Plan 04b). A token whose customer is soft-deleted (`DELETE /me`) is 401, even with inline pets only.
 
 ## Query
 
@@ -38,6 +38,8 @@ which decodes to `pets=[{"ref":"new-1","species":"DOG","sizeClass":"M","coatType
 - Booking mode: `DROP_OFF` if any requested service is `DROP_OFF` (its own `bookingMode`, or null and the location default is `DROP_OFF`), else `WAIT`.
 - The context is loaded once for `[start of from, end of to + 1 day)` local time; the extra day covers kennel blocks past midnight. The engine runs once per date and slots are concatenated in date order.
 - Unknown or inactive services are left to the engine (`UNKNOWN_SERVICE`).
+- Busy time: occupying segments, except those of an expired hold (`HELD` with `hold_expires_at <= now`).
+- Pet entries go through the shared `PetRequestResolver` and slots through the slot codec (see [Booking](booking.md)).
 
 ## Response
 
@@ -56,7 +58,7 @@ Instants are ISO 8601 UTC. `startsAt` is the first segment start in wait mode an
 | Case | Status | `code` |
 | --- | --- | --- |
 | Bad query (`pets` missing, not JSON or too long, more than 4 pets, range over 7 days, unknown key, `excludeAppointmentId`) | 400 | `VALIDATION_FAILED` with `errors[].path` |
-| Saved pet without a token / bad token | 401 | `UNAUTHORIZED` |
+| Saved pet without a token / bad token / token of a deleted customer | 401 | `UNAUTHORIZED` |
 | Staff token | 403 | `FORBIDDEN` |
 | Saved pet of another customer, or deleted | 404 | `NOT_FOUND` |
 | Engine `NO_PRICE_FOR_PET` | 400 | `NO_PRICE_FOR_PET` |

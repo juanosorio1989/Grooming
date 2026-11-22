@@ -142,6 +142,15 @@ describe("GET /v1/availability", () => {
     expect(deleted.body.code).toBe("NOT_FOUND");
   });
 
+  it("deleted customer token with petId → 401", async () => {
+    await setWait();
+    const token = await ownerToken();
+    await ctx.prisma.customer.update({ where: { id: f.customerId }, data: { deletedAt: new Date() } });
+    const res = await get(q([{ petId: f.petId, serviceIds: [f.serviceId] }]), token);
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe("UNAUTHORIZED");
+  });
+
   it('own pet with sizeClass null and no sizeClass in the query → 400 on "pets.0.sizeClass"; with "M" → 200', async () => {
     await setWait();
     await ctx.prisma.pet.update({ where: { id: f.petId }, data: { sizeClass: null, weightG: null } });

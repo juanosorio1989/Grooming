@@ -46,7 +46,8 @@ Raw SQL in the init migration (not modelled by Prisma; tests in
   (only rows with a `staff_user_id`; kennel segments have none).
 - `no_resource_overlap`: no two occupying segments on one station or kennel overlap.
   A violation of either (SQLSTATE `23P01`) is a lost booking race: the API's
-  problem filter answers `409 SLOT_TAKEN`, never 500 (`apps/api/src/common/pg-error.ts`).
+  problem filter answers `409 SLOT_TAKEN`, never 500, and logs the constraint name at `warn`
+  (`apps/api/src/common/pg-error.ts`; the message fallback is read only for Prisma errors).
 - `service_price_any_coat`: one `NULL`-coat price row per service and size.
 
 Seed (`pnpm --filter @grooming/api db:seed`, idempotent): organization
