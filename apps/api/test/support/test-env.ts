@@ -7,7 +7,10 @@ const JWT_PRIVATE_KEY_B64 = generateKeyPairSync("ed25519")
   .toString("base64");
 const DATA_ENCRYPTION_KEY = randomBytes(32).toString("base64");
 
-/** A valid test `Env` (fake OTP, console email, org `test-salon` as in `seedFixture`). */
+/**
+ * A valid test `Env` (fake OTP, console email, org `test-salon` as in `seedFixture`).
+ * `GOOGLE_OAUTH_CLIENT_IDS` stays unset (Google sign-in off) unless a test overrides it.
+ */
 export function testEnv(overrides: Record<string, string> = {}): Env {
   return loadEnv({
     NODE_ENV: "test",

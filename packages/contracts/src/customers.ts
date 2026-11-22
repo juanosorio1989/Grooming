@@ -17,6 +17,14 @@ export const CustomerViewSchema = z.object({
 });
 export type CustomerView = z.infer<typeof CustomerViewSchema>;
 
+/** A linked sign-in account as shown on `/me` (never the provider subject). */
+export const IdentityViewSchema = z.object({ provider: z.literal("GOOGLE"), email: z.string() });
+export type IdentityView = z.infer<typeof IdentityViewSchema>;
+
+/** `GET /me`: the customer view plus linked sign-in accounts. */
+export const MeViewSchema = CustomerViewSchema.extend({ identities: z.array(IdentityViewSchema) });
+export type MeView = z.infer<typeof MeViewSchema>;
+
 /** Staff view; `privateNotes` is present for OWNER/RECEPTION only (decrypted). */
 export const StaffCustomerViewSchema = CustomerViewSchema.extend({
   privateNotes: z.string().nullable().optional(),

@@ -55,6 +55,14 @@ const trustProxy = z.string().transform((v, ctx): false | number | string[] => {
   return z.NEVER;
 });
 
+/** Comma-separated list: entries trimmed, empty entries dropped. */
+const csvList = z.string().transform((v) =>
+  v
+    .split(",")
+    .map((p) => p.trim())
+    .filter((p) => p !== ""),
+);
+
 /** Base64 of exactly 32 bytes (AES-256 key). */
 const key32B64 = z
   .string()
@@ -82,6 +90,8 @@ const EnvSchema = z
     COOKIE_SECURE: bool.optional(),
     COOKIE_DOMAIN: z.string().optional(),
     TRUST_PROXY: trustProxy.default("false"),
+    /** Google OAuth client IDs accepted as ID token `aud`. Empty = Google sign-in off. */
+    GOOGLE_OAUTH_CLIENT_IDS: csvList.default(""),
   })
   .superRefine((e, ctx) => {
     const require = (key: keyof typeof e, message: string) => {

@@ -17,6 +17,8 @@ export const ErrorCode = z.enum([
   "STAGE_RESOURCE_MISMATCH",
   "IN_USE",
   "PET_MERGE_INVALID",
+  "IDENTITY_TAKEN",
+  "NO_PRICE_FOR_PET",
   "INTERNAL",
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;

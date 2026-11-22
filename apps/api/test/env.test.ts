@@ -1,6 +1,7 @@
 import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { loadEnv } from "../src/config/env.js";
+import { testEnv } from "./support/test-env.js";
 
 const jwtKey = generateKeyPairSync("ed25519").privateKey.export({ format: "der", type: "pkcs8" }).toString("base64");
 
@@ -116,6 +117,33 @@ describe("loadEnv", () => {
       .privateKey.export({ format: "der", type: "pkcs8" })
       .toString("base64");
     expect(() => loadEnv({ ...base, JWT_PRIVATE_KEY_B64: rsa })).toThrow(/JWT_PRIVATE_KEY_B64/);
+  });
+
+  it("GOOGLE_OAUTH_CLIENT_IDS unset is an empty list", () => {
+    expect(loadEnv(base).GOOGLE_OAUTH_CLIENT_IDS).toEqual([]);
+  });
+
+  it.each(["", "  ", " , ,"])("GOOGLE_OAUTH_CLIENT_IDS blank %j is an empty list", (value) => {
+    expect(loadEnv({ ...base, GOOGLE_OAUTH_CLIENT_IDS: value }).GOOGLE_OAUTH_CLIENT_IDS).toEqual([]);
+  });
+
+  it("GOOGLE_OAUTH_CLIENT_IDS is split on commas, trimmed, empty entries dropped", () => {
+    expect(loadEnv({ ...base, GOOGLE_OAUTH_CLIENT_IDS: " a.apps , ,b.apps " }).GOOGLE_OAUTH_CLIENT_IDS).toEqual([
+      "a.apps",
+      "b.apps",
+    ]);
+  });
+
+  it("testEnv keeps Google sign-in off even when the process env sets client IDs", () => {
+    const saved = process.env.GOOGLE_OAUTH_CLIENT_IDS;
+    process.env.GOOGLE_OAUTH_CLIENT_IDS = "from-process.apps";
+    try {
+      expect(testEnv().GOOGLE_OAUTH_CLIENT_IDS).toEqual([]);
+      expect(testEnv({ GOOGLE_OAUTH_CLIENT_IDS: "x.apps" }).GOOGLE_OAUTH_CLIENT_IDS).toEqual(["x.apps"]);
+    } finally {
+      if (saved === undefined) delete process.env.GOOGLE_OAUTH_CLIENT_IDS;
+      else process.env.GOOGLE_OAUTH_CLIENT_IDS = saved;
+    }
   });
 
   it("empty values count as missing", () => {

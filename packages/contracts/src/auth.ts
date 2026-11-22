@@ -23,6 +23,8 @@ export const OtpVerifyRequestSchema = z.object({
   phone: PhoneE164Schema,
   code: OtpCodeSchema,
   locale: LocaleSchema.optional(),
+  /** Google link ticket from `PHONE_REQUIRED`; ignored when Google sign-in is off. */
+  linkTicket: z.string().min(1).max(128).optional(),
 });
 export type OtpVerifyRequest = z.infer<typeof OtpVerifyRequestSchema>;
 
@@ -33,8 +35,41 @@ export const TokenResponseSchema = z.object({
 });
 export type TokenResponse = z.infer<typeof TokenResponseSchema>;
 
-export const OtpVerifyResponseSchema = TokenResponseSchema.extend({ isNew: z.boolean() });
+export const OtpVerifyResponseSchema = TokenResponseSchema.extend({
+  isNew: z.boolean(),
+  /** Present only when the request carried a `linkTicket` (and Google sign-in is on). */
+  identityLinked: z.boolean().optional(),
+});
 export type OtpVerifyResponse = z.infer<typeof OtpVerifyResponseSchema>;
+
+export const GoogleNonceResponseSchema = z.object({ nonce: z.string() });
+export type GoogleNonceResponse = z.infer<typeof GoogleNonceResponseSchema>;
+
+export const GoogleSignInRequestSchema = z.object({ idToken: z.string().min(1).max(4096) }).strict();
+export type GoogleSignInRequest = z.infer<typeof GoogleSignInRequestSchema>;
+
+/** `isNew` = the customer has no name yet, as in OTP verify. */
+export const GoogleSignedInSchema = TokenResponseSchema.extend({
+  status: z.literal("SIGNED_IN"),
+  isNew: z.boolean(),
+});
+
+/** No customer is linked to this Google account: verify a phone with the ticket. */
+export const GooglePhoneRequiredSchema = z.object({
+  status: z.literal("PHONE_REQUIRED"),
+  linkTicket: z.string(),
+  givenName: z.string().optional(),
+  name: z.string().optional(),
+});
+
+export const GoogleSignInResponseSchema = z.discriminatedUnion("status", [
+  GoogleSignedInSchema,
+  GooglePhoneRequiredSchema,
+]);
+export type GoogleSignInResponse = z.infer<typeof GoogleSignInResponseSchema>;
+
+export const LinkGoogleRequestSchema = GoogleSignInRequestSchema;
+export type LinkGoogleRequest = z.infer<typeof LinkGoogleRequestSchema>;
 
 export const StaffLoginRequestSchema = z.object({
   email: EmailSchema,
