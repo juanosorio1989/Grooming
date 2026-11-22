@@ -10,3 +10,4 @@ export * from "./staff";
 export * from "./customers";
 export * from "./pets";
 export * from "./public";
+export * from "./availability";

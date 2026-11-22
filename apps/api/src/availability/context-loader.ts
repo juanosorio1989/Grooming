@@ -27,7 +27,7 @@ export class AvailabilityContextLoader {
       this.prisma.service.findMany({
         where: { organizationId, active: true },
         select: {
-          id: true, stage: true, species: true, resourceTypeId: true, requiredSkill: true, bufferAfterMin: true, onlineBookable: true,
+          id: true, stage: true, species: true, resourceTypeId: true, requiredSkill: true, bufferAfterMin: true, onlineBookable: true, bookingMode: true,
           prices: { select: { serviceId: true, sizeClass: true, coatType: true, durationMin: true, priceCents: true } },
         },
       }),
@@ -61,6 +61,7 @@ export class AvailabilityContextLoader {
       services: services.map((s) => ({
         id: s.id, stage: s.stage, species: s.species, resourceTypeId: s.resourceTypeId,
         requiredSkill: s.requiredSkill, bufferAfterMin: s.bufferAfterMin, onlineBookable: s.onlineBookable,
+        bookingMode: s.bookingMode,
       })),
       prices: services.flatMap((s) => s.prices),
       employees: employees.flatMap((e) =>

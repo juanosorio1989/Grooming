@@ -13,3 +13,4 @@ Referencing ids in a body: one unknown referenced id is 404; invalid entries ins
 - [Customers](customers.md) - staff customer search/create/edit and the owner `/me` profile
 - [Pets](pets.md) - pets and vaccines for owners and staff, EMPLOYEE "today" scope, encrypted medical notes, duplicate merge
 - [Public](public.md) - unauthenticated locations, services, employees and breeds for the booking web
+- [Availability](availability.md) - `GET /availability` online slots for anonymous visitors (inline pets) and owners (saved pets), 7-day cap, engine error mapping, rate limit

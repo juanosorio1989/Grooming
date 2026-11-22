@@ -46,6 +46,7 @@ without an auth decorator answers 403 `FORBIDDEN` to everyone, so every new cont
 |---|---|
 | `@Public()` | anyone, no token (`/health`, `/auth/refresh`, `/auth/logout`, `/auth/otp/*`, login routes) |
 | `@CustomerAuth()` | a customer access token |
+| `@OptionalCustomerAuth()` | anyone without an `Authorization` header (`Principal` undefined); a sent header is checked like `@CustomerAuth()` (`GET /availability`) |
 | `@StaffAuth()` / `@StaffAuth("OWNER", ...)` | any staff token / only the listed roles |
 | `@Principal()` | param decorator: the verified `AccessClaims` |
 

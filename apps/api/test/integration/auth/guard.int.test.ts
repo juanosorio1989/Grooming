@@ -2,7 +2,7 @@ import { Controller, Get, Module } from "@nestjs/common";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { AccessClaims } from "@grooming/contracts";
-import { CustomerAuth, Principal, Public, StaffAuth } from "../../../src/auth/decorators.js";
+import { CustomerAuth, OptionalCustomerAuth, Principal, Public, StaffAuth } from "../../../src/auth/decorators.js";
 import { TokenService } from "../../../src/auth/token.service.js";
 import { createIntegrationApp, resetState } from "../app.js";
 import { seedFixture, type Fixture } from "../helpers.js";
@@ -25,6 +25,12 @@ class GuardTestController {
   @Get("customer")
   customer(@Principal() principal: AccessClaims) {
     return principal;
+  }
+
+  @OptionalCustomerAuth()
+  @Get("optional-customer")
+  optionalCustomer(@Principal() principal: AccessClaims | undefined) {
+    return { principal: principal ?? null };
   }
 
   @StaffAuth()
@@ -87,6 +93,25 @@ describe("AccessGuard (fail closed)", () => {
     const ok = await get("/v1/test/guard/customer", await customerToken());
     expect(ok.status).toBe(200);
     expect(ok.body).toEqual({ sub: f.customerId, typ: "customer", org: f.orgId, role: "CUSTOMER" });
+  });
+
+  it("optional-customer route: principal with a customer token, null without one; bad token 401, staff 403", async () => {
+    const anon = await get("/v1/test/guard/optional-customer");
+    expect(anon.status).toBe(200);
+    expect(anon.body).toEqual({ principal: null });
+    const ok = await get("/v1/test/guard/optional-customer", await customerToken());
+    expect(ok.status).toBe(200);
+    expect(ok.body).toEqual({ principal: { sub: f.customerId, typ: "customer", org: f.orgId, role: "CUSTOMER" } });
+    expect((await get("/v1/test/guard/optional-customer", "garbage")).status).toBe(401);
+    const otherOrg = (
+      await tokens.issueAccess({ sub: f.customerId, typ: "customer", org: "0194b2a0-0000-7000-8000-0000000000ff", role: "CUSTOMER" })
+    ).token;
+    expect((await get("/v1/test/guard/optional-customer", otherOrg)).status).toBe(401);
+    const basic = await request(ctx.app.getHttpServer())
+      .get("/v1/test/guard/optional-customer")
+      .set("Authorization", `Basic ${await customerToken()}`);
+    expect(basic.status).toBe(401);
+    expect((await get("/v1/test/guard/optional-customer", await staffToken("OWNER"))).status).toBe(403);
   });
 
   it("staff route: any staff role passes, a customer is 403", async () => {

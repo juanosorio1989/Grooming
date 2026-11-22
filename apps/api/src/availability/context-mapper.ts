@@ -15,6 +15,8 @@ export interface ServiceRow {
   requiredSkill: Skill;
   bufferAfterMin: number;
   onlineBookable: boolean;
+  /** Null = location default; used by `resolveBookingMode`, not by the engine. */
+  bookingMode: BookingMode | null;
 }
 export interface PriceRow {
   serviceId: string;
