@@ -610,7 +610,6 @@ model Customer {
   @@map("customer")
 }
 
-/// Append-only history; current state = latest row per (customer, channel).
 /// External sign-in account linked to a customer (owner sign-in). Rows are
 /// deleted explicitly on `DELETE /me`; the FKs restrict deletes.
 model CustomerIdentity {
@@ -633,6 +632,7 @@ model CustomerIdentity {
   @@map("customer_identity")
 }
 
+/// Append-only history; current state = latest row per (customer, channel).
 model NotificationConsent {
   id             String              @id @default(uuid(7)) @db.Uuid
   organizationId String              @map("organization_id") @db.Uuid
@@ -1165,7 +1165,6 @@ model NotificationLog {
   @@map("notification_log")
 }
 
-/// Append-only; `at` is the event time.
 /// Transactional outbox: written in the same transaction as the change, read by workers.
 model OutboxEvent {
   id             String    @id @default(uuid(7)) @db.Uuid
@@ -1182,6 +1181,7 @@ model OutboxEvent {
   @@map("outbox_event")
 }
 
+/// Append-only; `at` is the event time.
 model AuditLog {
   id             String    @id @default(uuid(7)) @db.Uuid
   organizationId String    @map("organization_id") @db.Uuid
