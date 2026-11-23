@@ -1,6 +1,7 @@
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { sha256Hex } from "../../../src/auth/crypto/tokens.js";
+import { IdentityLinkService } from "../../../src/auth/google/identity-link.service.js";
 import { GOOGLE_JWKS } from "../../../src/auth/google/google-jwks.js";
 import { createIntegrationApp, resetState } from "../app.js";
 import { createTestGoogle, TEST_GOOGLE_CLIENT_ID, type TestGoogle } from "../google.js";
@@ -185,6 +186,52 @@ describe("Google link ticket on /auth/otp/verify", () => {
     expect(identities[0]!.email).toBe("owner@gmail.com");
     expect(await ctx.prisma.outboxEvent.count()).toBe(0);
     expect(await ctx.prisma.auditLog.count({ where: { action: "auth.customer.identity_linked" } })).toBe(0);
+  });
+
+  it("linkInTx returns TAKEN when createMany inserts 0 rows", async () => {
+    const customer = await createCustomer({ phone: PHONE });
+    const links = ctx.app.get(IdentityLinkService);
+    const outcome = await ctx.prisma.$transaction(async (tx) => {
+      // A lost race on the unique indexes: ON CONFLICT DO NOTHING reports 0 inserted rows.
+      const racing = new Proxy(tx, {
+        get(target, prop, receiver) {
+          const value = Reflect.get(target, prop, receiver) as unknown;
+          if (prop !== "customerIdentity") return value;
+          return new Proxy(value as object, {
+            get(t, p, r) {
+              if (p === "createMany") return () => Promise.resolve({ count: 0 });
+              const v = Reflect.get(t, p, r) as unknown;
+              return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(t) : v;
+            },
+          });
+        },
+      });
+      return links.linkInTx(racing, { orgId: f.orgId, customerId: customer.id, sub: "g-sub-1", email: "owner@gmail.com", name: "Ana", notify: true, actorIp: "127.0.0.1" });
+    });
+    expect(outcome).toBe("TAKEN");
+    expect(await ctx.prisma.customerIdentity.count()).toBe(0);
+    expect(await ctx.prisma.outboxEvent.count()).toBe(0);
+    expect(await ctx.prisma.auditLog.count({ where: { action: "auth.customer.identity_linked" } })).toBe(0);
+  });
+
+  it("verify with a ticket for a new phone → isNew true and identityLinked true", async () => {
+    const agent = browser();
+    const { ticket } = await getTicket(agent);
+    const res = await verify(agent, { phone: PHONE, linkTicket: ticket });
+    expectSignedIn(res);
+    expect(res.body.isNew).toBe(true);
+    expect(res.body.identityLinked).toBe(true);
+  });
+
+  it("deleted customer + valid ticket → 401, ticket consumed, no identity row", async () => {
+    const customer = await createCustomer({ phone: PHONE });
+    await ctx.prisma.customer.update({ where: { id: customer.id }, data: { deletedAt: new Date() } });
+    const agent = browser();
+    const { ticket } = await getTicket(agent);
+    const res = await verify(agent, { phone: PHONE, linkTicket: ticket });
+    expect(res.status).toBe(401);
+    expect(await ctx.redis.get(`gauth:ticket:${sha256Hex(ticket)}`)).toBeNull();
+    expect(await ctx.prisma.customerIdentity.count()).toBe(0);
   });
 
   describe("unusable ticket → signed in by phone, identityLinked false, no identity row", () => {

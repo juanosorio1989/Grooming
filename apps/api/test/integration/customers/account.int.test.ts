@@ -492,13 +492,19 @@ describe("/v1/me/export and DELETE /v1/me", () => {
     );
     const pending = hold({ pets: [savedPet()], slot }, token).then((r) => r);
     // Wait until the hold transaction is blocked on the customer row lock (past every unlocked pre-check).
+    let seen = false;
     for (let i = 0; i < 200; i++) {
       const waiting = await ctx.prisma.$queryRaw<{ n: bigint }[]>`
         SELECT count(*) AS n FROM pg_stat_activity
         WHERE wait_event_type = 'Lock' AND query ILIKE '%FROM customer%FOR UPDATE%'`;
-      if (Number(waiting[0]!.n) > 0) break;
+      if (Number(waiting[0]!.n) > 0) {
+        seen = true;
+        break;
+      }
       await new Promise((r) => setTimeout(r, 25));
     }
+    // The test is only valid when the hold really waited on the lock.
+    expect(seen).toBe(true);
     release();
     await blocker;
     const res = await pending;

@@ -198,6 +198,35 @@ describe("GET /v1/availability (staff mode)", () => {
     expect(cancelled.body.code).toBe("NOT_FOUND");
   });
 
+  /** Another organization with a customer and a BOOKED appointment. */
+  async function foreignOrg() {
+    const org = await ctx.prisma.organization.create({ data: { name: "Other Grooming", slug: "other-salon", defaultLocale: "en" } });
+    const location = await ctx.prisma.location.create({
+      data: { organizationId: org.id, name: "Other", timezone: "America/New_York", settings: {} },
+    });
+    const customer = await ctx.prisma.customer.create({
+      data: { organizationId: org.id, phoneE164: "+13055550188", name: "Zed", locale: "en", createdVia: "ONLINE" },
+    });
+    const appointment = await ctx.prisma.appointment.create({
+      data: { organizationId: org.id, locationId: location.id, customerId: customer.id, status: "BOOKED", source: "ONLINE", bookingMode: "DROP_OFF" },
+    });
+    return { customerId: customer.id, appointmentId: appointment.id };
+  }
+
+  it("customerId of another organization → 404 NOT_FOUND", async () => {
+    const foreign = await foreignOrg();
+    const res = await get(q([inline()], { customerId: foreign.customerId }), await staff());
+    expect(res.status).toBe(404);
+    expect(res.body.code).toBe("NOT_FOUND");
+  });
+
+  it("excludeAppointmentId of another organization's BOOKED appointment → 404 NOT_FOUND", async () => {
+    const foreign = await foreignOrg();
+    const res = await get({ from: FROM, excludeAppointmentId: foreign.appointmentId }, await staff());
+    expect(res.status).toBe(404);
+    expect(res.body.code).toBe("NOT_FOUND");
+  });
+
   it("staff requests skip the per-IP rate limit", async () => {
     await setWait();
     const ip = "198.51.100.9";

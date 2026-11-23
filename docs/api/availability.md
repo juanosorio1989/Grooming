@@ -100,3 +100,7 @@ Instants are ISO 8601 UTC. `startsAt` is the first segment start in wait mode an
 ## Rate limit
 
 `availability:ip:<hashKeyPart(ip)>`: 120 requests per 600 s per client IP (fixed window). It is consumed after the guard, query validation, the staff-only param check (403) and the anonymous `excludeAppointmentId` check (401), before pets or the appointment are looked up or the engine runs. Staff requests skip it.
+
+## Timing log
+
+The slot search is timed: a debug line `{ dates, pets, ms }` per request (logger context `AvailabilityService`), a warning when it takes more than 1000 ms. Use it to size the limits later.

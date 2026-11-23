@@ -146,6 +146,36 @@ describe("GET /v1/availability", () => {
     expect(given.body.slots[0].pets[0].priceCents).toBe(4500);
   });
 
+  it('own pet with coatType null and no coatType in the query → 400 on "pets.0.coatType"', async () => {
+    await setWait();
+    await ctx.prisma.pet.update({ where: { id: f.petId }, data: { coatType: null } });
+    const token = await ownerToken();
+    const res = await get(q([{ petId: f.petId, serviceIds: [f.serviceId] }]), token);
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("VALIDATION_FAILED");
+    expect(res.body.errors.map((e: { path: string }) => e.path)).toEqual(["pets.0.coatType"]);
+  });
+
+  it("a service pair on one stage with different resource types → 400 STAGE_RESOURCE_MISMATCH", async () => {
+    const second = await ctx.prisma.service.create({
+      data: {
+        organizationId: f.orgId,
+        name: { en: "Second bath", es: "Segundo baño" },
+        species: "ANY",
+        stage: "BATH",
+        isMain: false,
+        requiredSkill: "BATHER",
+        resourceTypeId: f.kennelTypeId,
+      },
+    });
+    await ctx.prisma.servicePrice.create({
+      data: { organizationId: f.orgId, serviceId: second.id, sizeClass: "M", coatType: null, durationMin: 30, priceCents: 1000 },
+    });
+    const res = await get(q([inline({ serviceIds: [f.serviceId, second.id] })]));
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("STAGE_RESOURCE_MISMATCH");
+  });
+
   it("a stored sizeClass wins over the request value", async () => {
     await setWait();
     // The pet is M; an XL request value would find no price row if it were used.

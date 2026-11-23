@@ -189,6 +189,59 @@ describe("/v1/staff/appointments and /v1/staff/walk-in", () => {
     expect(await ctx.prisma.outboxEvent.count({ where: { type: "appointment.booked" } })).toBe(0);
   });
 
+  it("a HELD hold and a released hold are 404 on GET, PATCH and POST status", async () => {
+    const token = await staff();
+    const real = await bookSaved(token, "08:00");
+    const free = await auth(request(server()).get("/v1/availability").query({ from: FROM, excludeAppointmentId: real }), token);
+    const target = slotAt(free.body.slots as SlotView[], "10:00");
+
+    const held = await seedBooked(new Date(local("12:00")), new Date(local("13:00")));
+    await ctx.prisma.appointment.update({ where: { id: held }, data: { status: "HELD", holdExpiresAt: new Date(Date.now() + 300_000) } });
+    const released = await seedBooked(new Date(local("14:00")), new Date(local("15:00")));
+    await ctx.prisma.appointment.update({ where: { id: released }, data: { status: "CANCELLED", holdExpiresAt: new Date(Date.now() - 60_000) } });
+
+    for (const id of [held, released]) {
+      for (const res of [await get(id, token), await move(id, { slot: target }, token), await status(id, { action: "CANCEL" }, token)]) {
+        expect(res.status).toBe(404);
+        expect(res.body.code).toBe("NOT_FOUND");
+      }
+      expect((await row(id)).status).toBe(id === held ? "HELD" : "CANCELLED");
+    }
+  });
+
+  it("another organization's appointment id → 404 on GET", async () => {
+    const org = await ctx.prisma.organization.create({ data: { name: "Other Grooming", slug: "other-salon", defaultLocale: "en" } });
+    const location = await ctx.prisma.location.create({
+      data: { organizationId: org.id, name: "Other", timezone: "America/New_York", settings: {} },
+    });
+    const customer = await ctx.prisma.customer.create({
+      data: { organizationId: org.id, phoneE164: "+13055550188", name: "Zed", locale: "en", createdVia: "ONLINE" },
+    });
+    const appt = await ctx.prisma.appointment.create({
+      data: { organizationId: org.id, locationId: location.id, customerId: customer.id, status: "BOOKED", source: "ONLINE", bookingMode: "DROP_OFF" },
+    });
+    const res = await get(appt.id, await staff("OWNER"));
+    expect(res.status).toBe(404);
+    expect(res.body.code).toBe("NOT_FOUND");
+  });
+
+  it("a saved pet soft-deleted between validation and write → 409 PET_UNAVAILABLE; nothing is written", async () => {
+    const token = await staff();
+    const slot = slotAt(await slots(token, [savedPet()]), "08:00");
+    const loader = ctx.app.get(AvailabilityContextLoader);
+    const load = loader.load.bind(loader);
+    vi.spyOn(loader, "load").mockImplementation(async (...args) => {
+      const out = await load(...args);
+      await ctx.prisma.pet.update({ where: { id: f.petId }, data: { deletedAt: new Date() } });
+      return out;
+    });
+    const res = await create({ customerId: f.customerId, pets: [savedPet()], slot }, token);
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe("PET_UNAVAILABLE");
+    expect(await ctx.prisma.appointment.count()).toBe(0);
+    expect(await ctx.prisma.outboxEvent.count({ where: { type: "appointment.booked" } })).toBe(0);
+  });
+
   it("deleted customer → 404; EMPLOYEE → 403; unknown customer → 404", async () => {
     const token = await staff();
     const slot = slotAt(await slots(token, [savedPet()]), "08:00");

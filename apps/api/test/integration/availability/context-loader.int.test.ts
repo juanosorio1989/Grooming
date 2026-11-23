@@ -67,6 +67,15 @@ describe("AvailabilityContextLoader", () => {
     expect(later.context.busy).toEqual([]);
   });
 
+  it("busy segment with endsAt < from < blockEndsAt is busy", async () => {
+    await addEmployee(f.staffA, true);
+    await bookSegment(ctx.prisma, f, { staffUserId: f.staffA, startsAt: "10:00", endsAt: "11:00", blockEndsAt: "14:00", resourceId: f.resource1 });
+
+    const { context } = await loader.load({ from: at("12:00"), to: new Date("2026-12-02T00:00:00.000Z") });
+    expect(context.busy).toHaveLength(1);
+    expect(context.busy[0]).toMatchObject({ start: at("10:00").getTime(), blockEnd: at("14:00").getTime() });
+  });
+
   it("an expired HELD appointment's segments are not busy; an unexpired hold's are", async () => {
     await addEmployee(f.staffA, true);
     const expired = await bookSegment(ctx.prisma, f, { staffUserId: f.staffA, startsAt: "10:00", endsAt: "11:00" });

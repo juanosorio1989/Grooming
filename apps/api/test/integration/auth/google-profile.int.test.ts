@@ -90,6 +90,15 @@ describe("Profile link/unlink of a Google account", () => {
     expect(JSON.stringify(audits)).not.toContain("g-sub-1");
   });
 
+  it("link outbox payload equals {customerId, googleEmail, notifyEmail}", async () => {
+    const before = await ctx.prisma.customer.findUniqueOrThrow({ where: { id: f.customerId }, select: { email: true } });
+    const res = await link(browser());
+    expect(res.status).toBe(204);
+    const rows = await ctx.prisma.outboxEvent.findMany();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.payload).toEqual({ customerId: f.customerId, googleEmail: "owner@gmail.com", notifyEmail: before.email });
+  });
+
   it("link without the gr_gnonce cookie → 401", async () => {
     const idToken = await idTokenFor(browser());
     const res = await request(ctx.app.getHttpServer())

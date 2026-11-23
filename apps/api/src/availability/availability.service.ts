@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import { AvailabilityError, findSlots, type Slot } from "@grooming/availability";
 import type { AccessClaims, AvailabilityQuery, AvailabilityResponse } from "@grooming/contracts";
 import { addDays, datesInRange, localDayBoundsUtc } from "@grooming/datetime";
@@ -38,6 +38,8 @@ const PER_IP = [120, 600] as const;
  */
 @Injectable()
 export class AvailabilityService {
+  private readonly logger = new Logger(AvailabilityService.name);
+
   constructor(
     private readonly loader: AvailabilityContextLoader,
     private readonly locations: LocationService,
@@ -88,6 +90,7 @@ export class AvailabilityService {
     const mode = staff ? "STAFF" : "ONLINE";
     const override = staff ? (q.override ?? false) : false;
     const slots: Slot[] = [];
+    const t0 = performance.now();
     try {
       for (const date of datesInRange(q.from, to)) {
         slots.push(...findSlots({ ...context, mode, override, date, bookingMode, pets }));
@@ -95,6 +98,11 @@ export class AvailabilityService {
     } catch (err) {
       throw err instanceof AvailabilityError ? engineError(err) : err;
     }
+    // Timing of the slot search, to size the `/availability` limits later.
+    const ms = Math.round(performance.now() - t0);
+    const timing = { dates: datesInRange(q.from, to).length, pets: pets.length, ms };
+    if (ms > 1000) this.logger.warn(`slow availability search ${JSON.stringify(timing)}`);
+    else this.logger.debug(`availability search ${JSON.stringify(timing)}`);
     return { bookingMode, slots: slots.map((s) => toSlotView(s, labels)) };
   }
 
