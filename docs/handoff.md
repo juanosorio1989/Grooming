@@ -1,6 +1,6 @@
 # Handoff
 
-Last update: 2026-11-22 · Plan 04a merged to `main` (PR #5, `dd2f54b`); writing Plan 04b on `feat/mvp-04b-booking-writes`
+Last update: 2026-11-23 · Plan 04b done on `feat/mvp-04b-booking-writes` (final reviews + fix wave); merging to `main`
 
 ## Done
 
@@ -15,10 +15,16 @@ Last update: 2026-11-22 · Plan 04a merged to `main` (PR #5, `dd2f54b`); writing
   (nonce/ticket, link on OTP verify, Profile link/unlink, `/me` identities, outbox row, 90-day customer refresh),
   `OTP_CHANNELS` (owner request, default `sms`), `GET /availability` (online, 7-day cap). Every task reviewed by
   reviewer-opus; final branch review fix wave applied.
+- Plan 04b done (`docs/superpowers/plans/2026-11-18-mvp/04b-booking-writes.md`, API docs `docs/api/booking.md`):
+  holds with new pets + sweeper, confirm with duplicate-pet choice, owner list/cancel/reschedule, staff-mode
+  `/availability`, staff booking/move/cancel/no-show/walk-in, `GET /me/export`, `DELETE /me`. Every task reviewed by
+  reviewer-opus; two independent final reviews; one fix wave (lock order, deadlock → 409 CONFLICT).
+  Every 04b carry-over from 04a is done except the ones moved below.
 
 ## Next
 
-- Write Plan 04b (booking writes) in detail on `feat/mvp-04b-booking-writes`, show the routing table, then execute.
+- Write Plan 05 (visits, media, realtime API) in detail on a new branch, show the routing table, then execute.
+  Order agreed with the owner 2026-11-23: 05 → 06 → 07 → 08 → 09.
 
 ## Blocked on the owner (before launch, not blocking code)
 
@@ -41,41 +47,36 @@ Last update: 2026-11-22 · Plan 04a merged to `main` (PR #5, `dd2f54b`); writing
 
 ## Carry-over for later plans
 
-- Plan 04b (see also the 04a plan's "Moved to Plan 04b"):
-  - from 04a: staff-mode availability + `excludeAppointmentId`; `DELETE /me` removes identity rows and the
-    customer's unprocessed outbox rows and must lock the customer row (`FOR UPDATE`) so a racing Profile link
-    cannot leave an identity on a deleted customer; export lists linked identities;
-  - from 04a: `/availability` CPU budget — worst case ~0.4–0.7 s per date × 7 dates runs synchronously on the event
-    loop for anonymous callers (120 req / 10 min / IP). Decide a per-request time budget, a lower anonymous limit,
-    a concurrency cap or a worker thread; at least log search time;
-  - from 04a: reject a soft-deleted customer's token in `/availability` pet resolution (with the other deleted-customer checks);
-  - from 04a: decide link-notice `notify` inside the verify transaction (today a read just before it);
-  - from 04a (tests): `linkInTx` `count === 0` path, `isNew` on a new-phone link, deleted customer + ticket,
-    Profile-link outbox payload, busy-range edges (`endsAt < from < blockEndsAt`), `STAGE_RESOURCE_MISMATCH` and
-    missing `coatType` on `/availability`; move `FIXTURE_SETTINGS` out of `test/integration/helpers.ts` for unit tests;
-  - DTOs validate integer ms (NaN makes `validatePlan` throw);
-  - decide whether to grid-check segments after the first;
-  - kennel holds past local midnight (STAFF late drop-off);
-  - exclude the hold's own segments from `busy`;
-  - test two concurrent holds on the last kennel → one `SLOT_TAKEN`;
-  - `pet_visit.pet_id` is nullable while a hold carries a new pet; set it on confirm;
-  - booking/hold writers reject deleted pets (an insert racing a merge can land on the soft-deleted source); also reject pets of soft-deleted customers;
-  - `DELETE /me` soft-deletes the customer's pets and scrubs name/phone/email from `customer.*` audit before/after;
-  - EMPLOYEE pet scope ignores a cancelled `pet_visit` inside a non-cancelled appointment; revisit with per-pet cancel;
+- Any plan (unchanged from before 04b):
   - org provisioning must write settings that pass `LocationSettingsSchema` (invalid stored settings make PATCH 500);
   - any future role-changing path (CLI/admin) must reuse the last-login-capable-owner guard;
-  - deactivating a service/resource/employee with future bookings has no warning yet;
+  - deactivating a service/resource/employee with future bookings has no warning yet (Plan 08 UI);
   - staff vaccine edit keeps the original verifier stamp (decide: re-stamp or clear);
   - location settings cache TTL is 30 s across processes.
+- Known limits from 04b: kennels never pass local midnight (a late drop-off whose pickup grace passes midnight gets
+  no slot, even with override); a residual deadlock while releasing an expired hold is answered 409 `CONFLICT`
+  (client retries), never 500; `/me/pets*` answers 404 (not 401) for a deleted customer's still-valid access token.
 - Plan 05:
   - load steps ordered by `sort` (`validateSteps` requires index == sort);
   - audit the skip reason;
   - bound reception corrections to ≥ check-in time;
   - test the untested step paths (SKIP on DONE/SKIPPED, START on an unknown stage, READY with nothing open);
   - document one `PlannedStage` per stage;
-  - `visit_step.client_ref` only deduplicates the latest write; decide whether offline needs a per-write log.
-- Plan 07 (from 04a, accept or polish): feature-off routes answer 400/401 before 404; empty `Authorization`
+  - `visit_step.client_ref` only deduplicates the latest write; decide whether offline needs a per-write log;
+  - from 04b: `media.purge` outbox worker (delete object keys from storage; `DELETE /me` writes the row);
+  - from 04b: per-segment drag on the board (04b moves whole appointments); check-in re-planning when the size class changes;
+  - from 04b: EMPLOYEE pet scope ignores a cancelled `pet_visit` inside a non-cancelled appointment; revisit with per-pet cancel;
+  - from 04b: export media download links (export lists media ids today).
+- Plan 06 (from 04b and 04a):
+  - consume `appointment.booked` / `appointment.changed` / `appointment.cancelled` outbox rows (payload `{ appointmentId }`);
+    the worker must skip deleted customers;
+  - link-notice `notify` decided inside the verify transaction (today a read just before it);
+  - consent capture at booking (WhatsApp checkbox);
+  - scrub or detach the `notification_log` recipient on `DELETE /me`.
+- Plan 07: Turnstile on anonymous `POST /holds` (security-quality.md, "(call)"; anonymous holds can squat slots at
+  20 per IP per 10 min); and from 04a (accept or polish): feature-off routes answer 400/401 before 404; empty `Authorization`
   counts as anonymous on `/availability`; `"unknown"` client IPs share one rate-limit bucket.
+- Plan 09: revisit `/availability` limits with the timing logs (debug per request, warn above 1 s).
 - Availability hardening (any plan that touches it):
   - add the kennel-backtrack drop-off input to `validate-plan.test.ts` "accepts every slot";
   - key the `freeKeys` memo in `search.ts` by map kind (`e:`/`r:`) as well as id.

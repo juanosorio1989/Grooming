@@ -230,7 +230,7 @@ override, action: "appointment.move", actorType: "STAFF" })` (see above). No can
 ## Write order
 
 Validate outside the transaction (load the context, `validatePlan`; a rejection goes through `verdictError`) →
-`prisma.$transaction` → row locks (customer → pets → appointment) → `HoldReleaseService.releaseExpired(tx, now,
+`prisma.$transaction` → row locks (customer → pets → appointment; confirm: customer → hold → pets, serialized by the customer lock) → `HoldReleaseService.releaseExpired(tx, now,
 orgId)` → writes. `releaseExpired` locks rows the caller does not own (expired holds, `SKIP LOCKED`), so it always
 comes after the caller's own row locks: taking it first would invert the branch lock order against `DELETE /me`
 (customer → pets → appointments) and could deadlock.
