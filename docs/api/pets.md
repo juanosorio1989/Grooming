@@ -17,7 +17,8 @@ as is (the owner picked S/M/L/XL).
 
 Only own, non-deleted pets; anything else is `404`.
 
-- `GET|POST /me/pets` (max 20 pets per customer, the 21st is `409 CONFLICT`)
+- `GET|POST /me/pets` (max 20 pets per customer, the 21st is `409 CONFLICT`). Confirming a booking saves its new pets with the same rules
+  (`PetsService.createInTx`, see [Booking](booking.md#confirm)).
 - `GET|PATCH|DELETE /me/pets/:id` (DELETE soft-deletes, 204)
 - `GET|POST /me/pets/:id/vaccines`, `PATCH|DELETE /me/pets/:id/vaccines/:vid`. An owner PATCH on a verified vaccine
   clears `verifiedAt` / `verifiedByStaffId`.

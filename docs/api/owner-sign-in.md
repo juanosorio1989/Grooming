@@ -33,7 +33,8 @@ A signed-in owner can link or unlink a Google account from their profile. Code:
 | `POST /me/identities/google` | customer | Body `{ idToken (1..4096) }` (strict). Get a nonce from `POST /auth/google/nonce` first: the token's `nonce` must match and the request must carry the same browser's `gr_gnonce` cookie, else `401 UNAUTHORIZED`. `204` when linked, or already linked to this customer (the identity email is refreshed, no new audit or outbox row). `409 IDENTITY_TAKEN` when this Google account belongs to another customer **or** this customer already has another Google account; the body is the same for both, so it does not reveal which |
 | `DELETE /me/identities/google` | customer | Removes this customer's Google identity. Always `204`, also when nothing is linked |
 
-Staff tokens get `403`, no token `401`. A Profile link that creates a new link
+Staff tokens get `403`, no token `401`. A soft-deleted customer gets `404` on the link; a link that
+races `DELETE /me` and loses gets `409 IDENTITY_TAKEN` (`linkInTx` locks the customer first). A Profile link that creates a new link
 writes the `customer.identity_linked` outbox row; re-linking the same account writes none. `GET /me`
 and `PATCH /me` list linked accounts in `identities` (see
 [customers](customers.md)).

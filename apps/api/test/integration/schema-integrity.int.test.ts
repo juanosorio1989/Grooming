@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { bookSegment, createTestClient, type Fixture, rejectionCode, seedFixture, truncateAll } from "./helpers.js";
+import { bookSegment, createPetVisit, createTestClient, type Fixture, rejectionCode, seedFixture, truncateAll } from "./helpers.js";
 
 const prisma = createTestClient();
 let f: Fixture;
@@ -194,5 +194,48 @@ describe("partial indexes", () => {
     expect(def).toContain("UNIQUE");
     expect(def).toContain("(service_id, size_class)");
     expect(def).toContain("WHERE (coat_type IS NULL)");
+  });
+});
+
+describe("pet_visit booking columns", () => {
+  /** Raw insert so the database, not Prisma, rejects the row. */
+  const insertVisit = (appointmentId: string, petId: string | null, pendingPet: string | null, position: number) =>
+    prisma.$executeRaw`
+      INSERT INTO pet_visit (id, organization_id, appointment_id, pet_id, pending_pet, position, coat_type_at_booking,
+        status, size_class_at_booking, price_cents_quoted, updated_at)
+      VALUES (gen_random_uuid(), ${f.orgId}::uuid, ${appointmentId}::uuid, ${petId}::uuid, ${pendingPet}::jsonb, ${position},
+        'SMOOTH', 'BOOKED', 'M', 4000, now())`;
+
+  it("rejects a visit with neither pet_id nor pending_pet (23514)", async () => {
+    const visit = await createPetVisit(prisma, f);
+    expect(await rejectionCode(insertVisit(visit.appointmentId, null, null, 1))).toBe("23514");
+  });
+
+  it("accepts a pending pet with no pet_id", async () => {
+    const visit = await createPetVisit(prisma, f);
+    expect(await insertVisit(visit.appointmentId, null, JSON.stringify({ ref: "new-1", name: "Rex" }), 1)).toBe(1);
+  });
+
+  it("rejects two visits with the same (appointment_id, position) (23505)", async () => {
+    const visit = await createPetVisit(prisma, f);
+    expect(await rejectionCode(insertVisit(visit.appointmentId, f.petId, null, 0))).toBe("23505");
+  });
+});
+
+describe("appointment hold expiry", () => {
+  /** Raw insert so the database, not Prisma, rejects the row. */
+  const insertAppointment = (status: string, holdExpiresAt: Date | null) =>
+    prisma.$executeRaw`
+      INSERT INTO appointment (id, organization_id, location_id, status, source, booking_mode, hold_expires_at, updated_at)
+      VALUES (gen_random_uuid(), ${f.orgId}::uuid, ${f.locationId}::uuid, ${status}::appointment_status, 'ONLINE',
+        'WAIT', ${holdExpiresAt}, now())`;
+
+  it("rejects a HELD appointment with no hold_expires_at (23514)", async () => {
+    expect(await rejectionCode(insertAppointment("HELD", null))).toBe("23514");
+  });
+
+  it("accepts a HELD appointment with an expiry and a BOOKED one without", async () => {
+    expect(await insertAppointment("HELD", new Date(Date.now() + 60_000))).toBe(1);
+    expect(await insertAppointment("BOOKED", null)).toBe(1);
   });
 });

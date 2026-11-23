@@ -25,8 +25,8 @@ describe("AvailabilityQuerySchema", () => {
   it("parses inline and petId entries and defaults preferredGroomerId to ANY", () => {
     const r = AvailabilityQuerySchema.parse(query([inline(), { petId: PET, serviceIds: [SERVICE] }]));
     expect(r.pets).toHaveLength(2);
-    expect(r.pets[0]).toMatchObject({ ref: "new-1", preferredGroomerId: "ANY" });
-    expect(r.pets[1]).toMatchObject({ petId: PET, preferredGroomerId: "ANY" });
+    expect(r.pets?.[0]).toMatchObject({ ref: "new-1", preferredGroomerId: "ANY" });
+    expect(r.pets?.[1]).toMatchObject({ petId: PET, preferredGroomerId: "ANY" });
   });
 
   it('pets not JSON → issue on "pets"', () => {
@@ -71,5 +71,24 @@ describe("AvailabilityQuerySchema", () => {
     expect(issuePaths(query([inline()], { from: "9999-12-31" }))).toEqual(["from"]);
     expect(issuePaths(query([inline()], { to: "9999-12-31" }))).toContain("to");
     expect(issuePaths(query([inline()], { from: "2000-01-01" }))).toBeNull();
+  });
+
+  it('no pets and no excludeAppointmentId → issue on "pets"', () => {
+    expect(issuePaths({ from: "2026-12-01" })).toEqual(["pets"]);
+  });
+
+  it('pets and excludeAppointmentId together → issue on "pets"', () => {
+    expect(issuePaths(query([inline()], { excludeAppointmentId: PET }))).toEqual(["pets"]);
+  });
+
+  it("excludeAppointmentId alone is accepted", () => {
+    expect(issuePaths({ from: "2026-12-01", excludeAppointmentId: PET })).toBeNull();
+  });
+
+  it('override "true" → true, "false" → false; customerId accepted', () => {
+    expect(AvailabilityQuerySchema.parse(query([inline()], { override: "true" })).override).toBe(true);
+    expect(AvailabilityQuerySchema.parse(query([inline()], { override: "false" })).override).toBe(false);
+    expect(issuePaths(query([inline()], { override: "yes" }))).toEqual(["override"]);
+    expect(AvailabilityQuerySchema.parse(query([inline()], { customerId: PET })).customerId).toBe(PET);
   });
 });

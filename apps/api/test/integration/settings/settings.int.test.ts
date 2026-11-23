@@ -3,7 +3,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { LocationSettings } from "@grooming/contracts";
 import { LocationService } from "../../../src/location/location.service.js";
 import { createIntegrationApp, resetState } from "../app.js";
-import { FIXTURE_SETTINGS, seedFixture, type Fixture } from "../helpers.js";
+import { seedFixture, type Fixture } from "../helpers.js";
+import { FIXTURE_SETTINGS } from "../../support/fixture-settings.js";
 import { staffToken } from "../tokens.js";
 
 const SETTINGS = FIXTURE_SETTINGS;

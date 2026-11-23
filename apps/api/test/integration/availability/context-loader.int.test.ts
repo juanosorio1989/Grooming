@@ -67,6 +67,42 @@ describe("AvailabilityContextLoader", () => {
     expect(later.context.busy).toEqual([]);
   });
 
+  it("busy segment with endsAt < from < blockEndsAt is busy", async () => {
+    await addEmployee(f.staffA, true);
+    await bookSegment(ctx.prisma, f, { staffUserId: f.staffA, startsAt: "10:00", endsAt: "11:00", blockEndsAt: "14:00", resourceId: f.resource1 });
+
+    const { context } = await loader.load({ from: at("12:00"), to: new Date("2026-12-02T00:00:00.000Z") });
+    expect(context.busy).toHaveLength(1);
+    expect(context.busy[0]).toMatchObject({ start: at("10:00").getTime(), blockEnd: at("14:00").getTime() });
+  });
+
+  it("an expired HELD appointment's segments are not busy; an unexpired hold's are", async () => {
+    await addEmployee(f.staffA, true);
+    const expired = await bookSegment(ctx.prisma, f, { staffUserId: f.staffA, startsAt: "10:00", endsAt: "11:00" });
+    const fresh = await bookSegment(ctx.prisma, f, { staffUserId: f.staffA, startsAt: "12:00", endsAt: "13:00" });
+    await ctx.prisma.appointment.update({
+      where: { id: expired.appointmentId },
+      data: { status: "HELD", holdExpiresAt: new Date(Date.now() - 60_000) },
+    });
+    await ctx.prisma.appointment.update({
+      where: { id: fresh.appointmentId },
+      data: { status: "HELD", holdExpiresAt: new Date(Date.now() + 300_000) },
+    });
+
+    const { context } = await loader.load(range);
+    expect(context.busy.map((b) => b.start)).toEqual([at("12:00").getTime()]);
+  });
+
+  it("with excludeAppointmentId that appointment's segments are not busy", async () => {
+    await addEmployee(f.staffA, true);
+    const mine = await bookSegment(ctx.prisma, f, { staffUserId: f.staffA, startsAt: "10:00", endsAt: "11:00" });
+    await bookSegment(ctx.prisma, f, { staffUserId: f.staffA, startsAt: "12:00", endsAt: "13:00" });
+
+    expect((await loader.load(range)).context.busy).toHaveLength(2);
+    const { context } = await loader.load(range, { excludeAppointmentId: mine.appointmentId });
+    expect(context.busy.map((b) => b.start)).toEqual([at("12:00").getTime()]);
+  });
+
   it("time off at another location is excluded", async () => {
     await addEmployee(f.staffA, true);
     const other = await ctx.prisma.location.create({

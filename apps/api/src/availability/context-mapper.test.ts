@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FIXTURE_SETTINGS } from "../../test/integration/helpers.js";
+import { FIXTURE_SETTINGS } from "../../test/support/fixture-settings.js";
 import { resolveBookingMode, toEngineContext, type ContextRows } from "./context-mapper.js";
 
 const t = (hhmm: string) => new Date(`1970-01-01T${hhmm}:00.000Z`);

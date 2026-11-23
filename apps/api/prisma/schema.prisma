@@ -890,6 +890,7 @@ model Appointment {
   estimatedReadyAt      DateTime?         @map("estimated_ready_at") @db.Timestamptz(3)
   checkedInAt           DateTime?         @map("checked_in_at") @db.Timestamptz(3)
   completedAt           DateTime?         @map("completed_at") @db.Timestamptz(3)
+  /// Set while HELD: raw SQL CHECK `appointment_held_has_expiry` (status <> HELD or set).
   holdExpiresAt         DateTime?         @map("hold_expires_at") @db.Timestamptz(3)
   confirmedByCustomerAt DateTime?         @map("confirmed_by_customer_at") @db.Timestamptz(3)
   manageVersion         Int               @default(0) @map("manage_version")
@@ -974,11 +975,18 @@ model PetVisit {
   id                 String         @id @default(uuid(7)) @db.Uuid
   organizationId     String         @map("organization_id") @db.Uuid
   appointmentId      String         @map("appointment_id") @db.Uuid
-  /// Null only while the appointment is HELD for a pet created before OTP (kept in
-  /// the hold's payload); set when the booking is confirmed.
+  /// Null only while the appointment is HELD for a pet not saved yet (details in
+  /// `pending_pet`); set when the booking is confirmed.
   petId              String?        @map("pet_id") @db.Uuid
+  /// 0-based order of the pets in the appointment (unique per appointment).
+  position           Int            @db.SmallInt
   status             PetVisitStatus
   sizeClassAtBooking SizeClass      @map("size_class_at_booking")
+  /// Coat snapshot at booking time (prices and durations depend on it).
+  coatTypeAtBooking  CoatType       @map("coat_type_at_booking")
+  /// Details of a pet not yet saved (created on confirm). Raw SQL CHECK
+  /// `pet_visit_pet_or_pending`: pet_id or pending_pet is set.
+  pendingPet         Json?          @map("pending_pet")
   sizeClassAtCheckin SizeClass?     @map("size_class_at_checkin")
   weightGAtCheckin   Int?           @map("weight_g_at_checkin")
   preferredGroomerId String?        @map("preferred_groomer_id") @db.Uuid
@@ -1011,6 +1019,7 @@ model PetVisit {
   @@index([petId])
   @@index([kennelResourceId])
   @@index([preferredGroomerId])
+  @@unique([appointmentId, position])
   @@map("pet_visit")
 }
 

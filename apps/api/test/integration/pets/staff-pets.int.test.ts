@@ -27,7 +27,7 @@ describe("staff pets", () => {
       data: { organizationId: f.orgId, locationId: f.locationId, customerId: f.customerId, status, source: "ONLINE", bookingMode: "DROP_OFF" },
     });
     const pv = await ctx.prisma.petVisit.create({
-      data: { organizationId: f.orgId, appointmentId: appt.id, petId: f.petId, status: "BOOKED", sizeClassAtBooking: "M", priceCentsQuoted: 4000 },
+      data: { organizationId: f.orgId, appointmentId: appt.id, petId: f.petId, position: 0, status: "BOOKED", sizeClassAtBooking: "M", coatTypeAtBooking: "SMOOTH", priceCentsQuoted: 4000 },
     });
     return ctx.prisma.appointmentSegment.create({
       data: {

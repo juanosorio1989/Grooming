@@ -14,3 +14,4 @@ Referencing ids in a body: one unknown referenced id is 404; invalid entries ins
 - [Pets](pets.md) - pets and vaccines for owners and staff, EMPLOYEE "today" scope, encrypted medical notes, duplicate merge
 - [Public](public.md) - unauthenticated locations, services, employees and breeds for the booking web
 - [Availability](availability.md) - `GET /availability` online slots for anonymous visitors (inline pets) and owners (saved pets), 7-day cap, engine error mapping, rate limit
+- [Booking](booking.md) - `POST/GET/DELETE /holds` (slot holds with new pets, expiry, `replaceHoldId`, hold sweeper), `POST /appointments` (confirm a hold, save pending pets, `usePets`), `/me/appointments` (owner list, detail, cancel, reschedule), `/staff/appointments` and `/staff/walk-in` (staff book, read, move, cancel/no-show, walk-in) and the shared booking core: pet resolver, slot codec, verdict mapping, plan writer, hold release, active-customer check

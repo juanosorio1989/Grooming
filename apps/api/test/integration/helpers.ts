@@ -1,7 +1,7 @@
 import { type Prisma, PrismaClient, type SegmentStage, type StaffRole } from "@prisma/client";
-import type { LocationSettings } from "@grooming/contracts";
 import { Encryptor } from "../../src/auth/crypto/encryption.js";
 import { hashPassword } from "../../src/auth/crypto/password.js";
+import { FIXTURE_SETTINGS } from "../support/fixture-settings.js";
 import { testEnv } from "../support/test-env.js";
 import { testDatabaseUrl } from "./setup.js";
 
@@ -54,23 +54,7 @@ export async function rejectionCode(promise: Promise<unknown>, constraint?: stri
   return undefined;
 }
 
-/** Same values as `prisma/seed.ts` LOCATION_SETTINGS; the fixture location stores these. */
-export const FIXTURE_SETTINGS: LocationSettings = {
-  slotIntervalMin: 15,
-  holdMinutes: 5,
-  cancelWindowHours: 24,
-  bookingHorizonDays: 60,
-  minLeadMinutes: 60,
-  defaultBookingMode: "DROP_OFF",
-  dropOffWindows: Object.fromEntries([1, 2, 3, 4, 5, 6].map((d) => [String(d), [{ from: "08:00", to: "11:00" }]])),
-  maxQueueWaitMin: 90,
-  pickupGraceMin: 60,
-  sizeThresholdsLb: { S: 20, M: 50, L: 90 },
-  requireAfterPhoto: true,
-  vaccinePolicy: "WARN",
-  requiredVaccines: { DOG: ["RABIES"] },
-  etaNotifyThresholdMin: 30,
-};
+export { FIXTURE_SETTINGS };
 
 export interface Fixture {
   orgId: string;
@@ -236,8 +220,10 @@ export async function createPetVisit(
       organizationId: f.orgId,
       appointmentId: appointment.id,
       petId: f.petId,
+      position: 0,
       status: "BOOKED",
       sizeClassAtBooking: "M",
+      coatTypeAtBooking: "SMOOTH",
       priceCentsQuoted: 4000,
     },
     select: { id: true, appointmentId: true },

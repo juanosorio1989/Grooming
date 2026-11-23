@@ -18,7 +18,9 @@ const BEARER = /^Bearer ([A-Za-z0-9_.-]+)$/;
  * auth decorator answers 403 to everyone. Token problems (missing, invalid,
  * expired, other organization) are 401; a valid token of the wrong kind or
  * role is 403. `optional-customer` lets a request without an `Authorization`
- * header through anonymously and checks a sent header like `customer`.
+ * header through anonymously and checks a sent header like `customer`;
+ * `optional-customer-or-staff` does the same and also accepts a staff token
+ * whose role is in `staffRoles`.
  */
 @Injectable()
 export class AccessGuard implements CanActivate {
@@ -38,7 +40,7 @@ export class AccessGuard implements CanActivate {
 
     const req = context.switchToHttp().getRequest<AuthedRequest>();
     const header = req.get("authorization");
-    if (policy.kind === "optional-customer" && !header) return true;
+    if ((policy.kind === "optional-customer" || policy.kind === "optional-customer-or-staff") && !header) return true;
     const match = BEARER.exec(header ?? "");
     if (!match) throw new UnauthorizedException({ code: "UNAUTHORIZED" });
     const claims = await this.tokens.verifyAccess(match[1]!);
@@ -51,7 +53,11 @@ export class AccessGuard implements CanActivate {
 }
 
 function allows(policy: Exclude<AuthPolicy, { kind: "public" }>, claims: AccessClaims): boolean {
-  if (policy.kind === "customer" || policy.kind === "optional-customer") return claims.typ === "customer" && claims.role === "CUSTOMER";
+  const isCustomer = claims.typ === "customer" && claims.role === "CUSTOMER";
+  if (policy.kind === "customer" || policy.kind === "optional-customer") return isCustomer;
+  if (policy.kind === "optional-customer-or-staff") {
+    return isCustomer || (claims.typ === "staff" && claims.role !== "CUSTOMER" && policy.staffRoles.includes(claims.role));
+  }
   if (claims.typ !== "staff" || claims.role === "CUSTOMER") return false;
   return policy.roles.length === 0 || policy.roles.includes(claims.role);
 }

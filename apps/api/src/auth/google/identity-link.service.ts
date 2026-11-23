@@ -1,6 +1,7 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, UnauthorizedException } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 import { AuditService } from "../../audit/audit.service.js";
+import { assertActiveCustomer } from "../../customers/active-customer.js";
 
 export type LinkOutcome = "LINKED" | "ALREADY_LINKED" | "TAKEN";
 
@@ -32,9 +33,19 @@ export class IdentityLinkService {
    * customer or the customer has another Google account (TAKEN). LINKED: sets customer.email from Google only when it is
    * null, sets customer.name only when it is null, writes audit auth.customer.identity_linked {provider:"GOOGLE"} and,
    * when notify is true, the outbox row. ALREADY_LINKED: refreshes identity.email only.
+   * Locks the customer row `FOR UPDATE` first (the branch-wide lock order starts at the
+   * customer), so a concurrent `DELETE /me` either waits for this link and then removes
+   * the identity, or commits first and this call sees the deleted customer: TAKEN.
    */
   async linkInTx(tx: Prisma.TransactionClient, args: LinkArgs): Promise<LinkOutcome> {
     const { orgId, customerId, sub, email, name } = args;
+
+    try {
+      await assertActiveCustomer(tx, orgId, customerId, "update");
+    } catch (e) {
+      if (e instanceof UnauthorizedException) return "TAKEN";
+      throw e;
+    }
 
     const bySub = await tx.customerIdentity.findUnique({
       where: { organizationId_provider_subject: { organizationId: orgId, provider: "GOOGLE", subject: sub } },
@@ -53,7 +64,7 @@ export class IdentityLinkService {
 
     // Read before the link sets it: the notice must never go to the address of whoever linked.
     const customer = await tx.customer.findFirst({
-      where: { id: customerId, organizationId: orgId },
+      where: { id: customerId, organizationId: orgId, deletedAt: null },
       select: { email: true },
     });
     if (!customer) return "TAKEN";

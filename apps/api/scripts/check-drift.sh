@@ -8,7 +8,9 @@
 #
 # The raw SQL in the init migration (btree_gist, no_employee_overlap,
 # no_resource_overlap, segment_time_order, segment_staff_matches_stage, the
-# partial unique index service_price_any_coat) is invisible to the Prisma schema; `migrate diff`
+# partial unique index service_price_any_coat), the booking_writes CHECK
+# pet_visit_pet_or_pending and the held_has_expiry CHECK
+# appointment_held_has_expiry are invisible to the Prisma schema; `migrate diff`
 # does not report it as drift (verified with Prisma 6.19), so
 # no filtering is needed. The integration test asserts they exist.
 set -euo pipefail

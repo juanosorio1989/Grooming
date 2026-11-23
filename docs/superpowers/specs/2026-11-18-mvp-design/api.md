@@ -29,8 +29,8 @@ Contracts, edge cases, limits and audit in
 | GET | `/public/services` | + `species`, `stage`, `is_main`, price matrix rows |
 | GET | `/public/employees` | groomers bookable as "preferred" |
 | GET | `/public/breeds` | seeded list (EN/ES) for autocomplete |
-| GET | `/availability` | `mode` resolved server-side; body-style query `pets[]` (petId or inline `{species,sizeClass,coatType}`, services, preferredGroomerId); `excludeAppointmentId?` → `{ bookingMode, slots }` (`excludeAppointmentId` and staff mode arrive in Plan 04b) |
-| POST | `/holds` | `{ slot, newPets? }` → `{ holdId, expiresAt }` |
+| GET | `/availability` | `mode` resolved server-side; body-style query `pets[]` (petId or inline `{species,sizeClass,coatType}`, services, preferredGroomerId); `excludeAppointmentId?` → `{ bookingMode, slots }`; staff mode for OWNER/RECEPTION. Details: [`docs/api/availability.md`](../../../api/availability.md) |
+| POST | `/holds` | `{ pets, slot, replaceHoldId? }` → `{ holdId, expiresAt }`. Details: [`docs/api/booking.md`](../../../api/booking.md) |
 | GET | `/track/:token` | appointment + pet visits + steps + ETA + published reports |
 | GET | `/track/:token/stream` | SSE |
 
@@ -41,7 +41,7 @@ Contracts, edge cases, limits and audit in
 | CRUD | `/me/pets` | profile; DELETE soft-deletes |
 | CRUD | `/me/pets/:id/vaccines` | owner-entered, unverified |
 | GET | `/me/pets/:id/history` | visits with steps, observations, reports, media URLs |
-| POST | `/appointments` | `{ holdId, notes? }` |
+| POST | `/appointments` | `{ holdId, notes?, usePets? }`. Details: [`docs/api/booking.md`](../../../api/booking.md) |
 | (copied) | `/me`, `/me/appointments…`, `/me/export`, `DELETE /me` | export/delete include pets and media |
 
 ## Media

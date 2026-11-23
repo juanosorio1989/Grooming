@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import { Prisma, type Customer } from "@prisma/client";
 import type {
   AccessClaims,
@@ -31,6 +31,12 @@ function toView(c: Customer): CustomerView {
     createdAt: c.createdAt.toISOString(),
   };
 }
+
+/**
+ * Keys of `auditShape` that identify the person. `DELETE /me` strips exactly these
+ * from the customer's audit rows; keep the list in sync with `toView`.
+ */
+export const CUSTOMER_AUDIT_PII_KEYS = ["name", "phone", "email", "emergencyPhone"] as const;
 
 /** Audit snapshot: never contains the notes text. */
 function auditShape(c: Customer) {
@@ -179,7 +185,8 @@ export class CustomersService {
   async getMe(actor: AccessClaims): Promise<MeView> {
     const organizationId = await this.tenancy.getOrgId();
     const row = await this.prisma.customer.findFirst({ where: { id: actor.sub, organizationId, deletedAt: null } });
-    if (!row) throw new NotFoundException("Customer not found");
+    // A token outlives `DELETE /me`: a missing or deleted customer is 401, like every customer route.
+    if (!row) throw new UnauthorizedException({ code: "UNAUTHORIZED" });
     return { ...toView(row), identities: await this.identities(this.prisma, organizationId, row.id) };
   }
 
@@ -187,7 +194,7 @@ export class CustomersService {
     const orgId = await this.tenancy.getOrgId();
     return this.prisma.$transaction(async (tx) => {
       const before = await tx.customer.findFirst({ where: { id: actor.sub, organizationId: orgId, deletedAt: null } });
-      if (!before) throw new NotFoundException("Customer not found");
+      if (!before) throw new UnauthorizedException({ code: "UNAUTHORIZED" });
       const row = await tx.customer.update({
         where: { id: actor.sub },
         data: {

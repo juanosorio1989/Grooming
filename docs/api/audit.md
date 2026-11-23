@@ -24,7 +24,7 @@ Actions:
 - settings: `settings.update`, `location_hours.replace`, `closure.create|delete`
 - staff (entity `staff_user` unless noted): `employee.create|update`, `employee_services.replace`, `working_hours.replace`,
   `time_off.create|update|delete` (entity `time_off`), `staff.invite`, `staff.owner_cli`
-- customers: `customer.create|update`
+- customers: `customer.create|update|delete` (`delete` strips `name`, `phone`, `email`, `emergencyPhone` from the customer's earlier audit rows)
 - pets: `pet.create|update|delete|merge`, `pet_vaccine.create|update|delete|verify`
 - auth: `auth.staff.login|login_failed|invite_accepted|mfa_enrolled|password_reset|recovery_used`, `auth.customer.login`, `auth.refresh_reuse`
 

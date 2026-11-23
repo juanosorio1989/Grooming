@@ -19,6 +19,7 @@ export const ErrorCode = z.enum([
   "PET_MERGE_INVALID",
   "IDENTITY_TAKEN",
   "NO_PRICE_FOR_PET",
+  "PET_UNAVAILABLE",
   "INTERNAL",
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;

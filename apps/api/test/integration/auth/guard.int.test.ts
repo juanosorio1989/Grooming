@@ -2,7 +2,7 @@ import { Controller, Get, Module } from "@nestjs/common";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { AccessClaims } from "@grooming/contracts";
-import { CustomerAuth, OptionalCustomerAuth, Principal, Public, StaffAuth } from "../../../src/auth/decorators.js";
+import { CustomerAuth, OptionalCustomerAuth, OptionalCustomerOrStaffAuth, Principal, Public, StaffAuth } from "../../../src/auth/decorators.js";
 import { TokenService } from "../../../src/auth/token.service.js";
 import { createIntegrationApp, resetState } from "../app.js";
 import { seedFixture, type Fixture } from "../helpers.js";
@@ -30,6 +30,12 @@ class GuardTestController {
   @OptionalCustomerAuth()
   @Get("optional-customer")
   optionalCustomer(@Principal() principal: AccessClaims | undefined) {
+    return { principal: principal ?? null };
+  }
+
+  @OptionalCustomerOrStaffAuth("OWNER")
+  @Get("optional-customer-or-owner")
+  optionalCustomerOrOwner(@Principal() principal: AccessClaims | undefined) {
     return { principal: principal ?? null };
   }
 
@@ -112,6 +118,25 @@ describe("AccessGuard (fail closed)", () => {
       .set("Authorization", `Basic ${await customerToken()}`);
     expect(basic.status).toBe(401);
     expect((await get("/v1/test/guard/optional-customer", await staffToken("OWNER"))).status).toBe(403);
+  });
+
+  it("optional-customer-or-staff route (OWNER): RECEPTION 403, OWNER principal, customer principal, none null; bad token 401", async () => {
+    const path = "/v1/test/guard/optional-customer-or-owner";
+    const anon = await get(path);
+    expect(anon.status).toBe(200);
+    expect(anon.body).toEqual({ principal: null });
+    const owner = await get(path, await staffToken("OWNER"));
+    expect(owner.status).toBe(200);
+    expect(owner.body).toEqual({ principal: { sub: f.staffA, typ: "staff", org: f.orgId, role: "OWNER" } });
+    const customer = await get(path, await customerToken());
+    expect(customer.status).toBe(200);
+    expect(customer.body).toEqual({ principal: { sub: f.customerId, typ: "customer", org: f.orgId, role: "CUSTOMER" } });
+    const reception = await get(path, await staffToken("RECEPTION"));
+    expect(reception.status).toBe(403);
+    expect(reception.body.code).toBe("FORBIDDEN");
+    expect((await get(path, await staffToken("EMPLOYEE"))).status).toBe(403);
+    expect((await get(path, "garbage")).status).toBe(401);
+    expect((await get(path, await staffToken("OWNER", "0194b2a0-0000-7000-8000-0000000000ff"))).status).toBe(401);
   });
 
   it("staff route: any staff role passes, a customer is 403", async () => {

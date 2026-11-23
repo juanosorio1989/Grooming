@@ -1,24 +1,11 @@
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AvailabilityResponseSchema } from "@grooming/contracts";
-import { addDays, todayIn, wallTimeToUtc, weekdayOf, type IsoDate } from "@grooming/datetime";
+import { addDays } from "@grooming/datetime";
 import { createIntegrationApp, resetState } from "../app.js";
+import { FROM, local, seedBookableTuesday, wall } from "../bookable-day.js";
 import { createPetVisit, seedFixture, type Fixture } from "../helpers.js";
 import { customerToken, staffToken } from "../tokens.js";
-
-const TZ = "America/New_York";
-const t = (hhmm: string) => new Date(`1970-01-01T${hhmm}:00.000Z`);
-
-/** The first Tuesday at least 3 days after today (New York): inside the 60-day horizon, past the 60-min lead time. */
-function nextTuesday(): IsoDate {
-  let d = addDays(todayIn(TZ, Date.now()), 3);
-  while (weekdayOf(d) !== 2) d = addDays(d, 1);
-  return d;
-}
-const FROM = nextTuesday();
-const local = (hhmm: string, date: IsoDate = FROM) => new Date(wallTimeToUtc(date, hhmm, TZ)).toISOString();
-const wall = (iso: string) =>
-  new Intl.DateTimeFormat("en-GB", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(iso));
 
 describe("GET /v1/availability", () => {
   let ctx: Awaited<ReturnType<typeof createIntegrationApp>>;
@@ -45,16 +32,7 @@ describe("GET /v1/availability", () => {
     ctx = await createIntegrationApp({ env: { TRUST_PROXY: "1" } });
     await resetState(ctx.prisma, ctx.redis);
     f = await seedFixture(ctx.prisma);
-    await ctx.prisma.locationHours.create({ data: { locationId: f.locationId, weekday: 2, opens: t("08:00"), closes: t("18:00") } });
-    await ctx.prisma.employeeProfile.create({ data: { staffUserId: f.staffA, displayName: "A", skills: ["BATHER"] } });
-    await ctx.prisma.employeeService.create({ data: { staffUserId: f.staffA, serviceId: f.serviceId } });
-    await ctx.prisma.staffLocation.create({ data: { staffUserId: f.staffA, locationId: f.locationId } });
-    await ctx.prisma.workingHours.create({
-      data: { organizationId: f.orgId, staffUserId: f.staffA, locationId: f.locationId, weekday: 2, startTime: t("08:00"), endTime: t("17:00") },
-    });
-    await ctx.prisma.servicePrice.create({
-      data: { organizationId: f.orgId, serviceId: f.serviceId, sizeClass: "M", coatType: null, durationMin: 60, priceCents: 4500 },
-    });
+    await seedBookableTuesday(ctx.prisma, f);
   });
 
   afterEach(async () => {
@@ -142,6 +120,18 @@ describe("GET /v1/availability", () => {
     expect(deleted.body.code).toBe("NOT_FOUND");
   });
 
+  it("deleted customer token with petId → 401; with inline pets only → 401", async () => {
+    await setWait();
+    const token = await ownerToken();
+    await ctx.prisma.customer.update({ where: { id: f.customerId }, data: { deletedAt: new Date() } });
+    const res = await get(q([{ petId: f.petId, serviceIds: [f.serviceId] }]), token);
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe("UNAUTHORIZED");
+    const inlineOnly = await get(q([inline()]), token);
+    expect(inlineOnly.status).toBe(401);
+    expect(inlineOnly.body.code).toBe("UNAUTHORIZED");
+  });
+
   it('own pet with sizeClass null and no sizeClass in the query → 400 on "pets.0.sizeClass"; with "M" → 200', async () => {
     await setWait();
     await ctx.prisma.pet.update({ where: { id: f.petId }, data: { sizeClass: null, weightG: null } });
@@ -154,6 +144,36 @@ describe("GET /v1/availability", () => {
     const given = await get(q([{ petId: f.petId, sizeClass: "M", serviceIds: [f.serviceId] }]), token);
     expect(given.status).toBe(200);
     expect(given.body.slots[0].pets[0].priceCents).toBe(4500);
+  });
+
+  it('own pet with coatType null and no coatType in the query → 400 on "pets.0.coatType"', async () => {
+    await setWait();
+    await ctx.prisma.pet.update({ where: { id: f.petId }, data: { coatType: null } });
+    const token = await ownerToken();
+    const res = await get(q([{ petId: f.petId, serviceIds: [f.serviceId] }]), token);
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("VALIDATION_FAILED");
+    expect(res.body.errors.map((e: { path: string }) => e.path)).toEqual(["pets.0.coatType"]);
+  });
+
+  it("a service pair on one stage with different resource types → 400 STAGE_RESOURCE_MISMATCH", async () => {
+    const second = await ctx.prisma.service.create({
+      data: {
+        organizationId: f.orgId,
+        name: { en: "Second bath", es: "Segundo baño" },
+        species: "ANY",
+        stage: "BATH",
+        isMain: false,
+        requiredSkill: "BATHER",
+        resourceTypeId: f.kennelTypeId,
+      },
+    });
+    await ctx.prisma.servicePrice.create({
+      data: { organizationId: f.orgId, serviceId: second.id, sizeClass: "M", coatType: null, durationMin: 30, priceCents: 1000 },
+    });
+    const res = await get(q([inline({ serviceIds: [f.serviceId, second.id] })]));
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("STAGE_RESOURCE_MISMATCH");
   });
 
   it("a stored sizeClass wins over the request value", async () => {
@@ -182,6 +202,22 @@ describe("GET /v1/availability", () => {
     expect(nested.status).toBe(400);
     const missing = await get({ from: FROM });
     expect(missing.status).toBe(400);
+  });
+
+  it('no pets → 400 on "pets"; anonymous excludeAppointmentId (reschedule) → 401; both → 400 on "pets"', async () => {
+    const paths = (res: { body: { errors?: { path: string }[] } }) => (res.body.errors ?? []).map((e) => e.path);
+    const missing = await get({ from: FROM });
+    expect(missing.status).toBe(400);
+    expect(missing.body.code).toBe("VALIDATION_FAILED");
+    expect(paths(missing)).toEqual(["pets"]);
+
+    const exclude = await get({ from: FROM, excludeAppointmentId: f.customerId });
+    expect(exclude.status).toBe(401);
+    expect(exclude.body.code).toBe("UNAUTHORIZED");
+
+    const both = await get(q([inline()], { excludeAppointmentId: f.customerId }));
+    expect(both.status).toBe(400);
+    expect(paths(both)).toEqual(["pets"]);
   });
 
   it("from in year 9999 or 0050 → 400 VALIDATION_FAILED, not 500", async () => {
@@ -238,8 +274,8 @@ describe("GET /v1/availability", () => {
     expect(after).toContain("11:00");
   });
 
-  it("staff token → 403; malformed bearer → 401", async () => {
-    const staff = await staffToken(ctx.app, { sub: f.staffA, org: f.orgId, role: "OWNER" });
+  it("EMPLOYEE staff token → 403 (OWNER/RECEPTION use staff mode); malformed bearer → 401", async () => {
+    const staff = await staffToken(ctx.app, { sub: f.staffA, org: f.orgId, role: "EMPLOYEE" });
     expect((await get(q([inline()]), staff)).status).toBe(403);
     expect((await get(q([inline()]), "garbage")).status).toBe(401);
   });

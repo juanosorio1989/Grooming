@@ -14,8 +14,16 @@ export class AvailabilityContextLoader {
     private readonly locations: LocationService,
   ) {}
 
-  /** One query per table for the whole UTC range [from, to). `now` is the current time. */
-  async load(range: { from: Date; to: Date }): Promise<{ rows: ContextRows; context: Omit<Context, "mode" | "override"> }> {
+  /**
+   * One query per table for the whole UTC range [from, to). `now` is the current time.
+   * A segment is busy when it occupies, its appointment is not `excludeAppointmentId`
+   * (reschedule/move ignore their own rows), and the appointment is not an expired hold.
+   */
+  async load(
+    range: { from: Date; to: Date },
+    opts: { excludeAppointmentId?: string } = {},
+  ): Promise<{ rows: ContextRows; context: Omit<Context, "mode" | "override"> }> {
+    const now = new Date();
     const organizationId = await this.tenancy.getOrgId();
     const location = await this.locations.getDefault();
     const locationId = location.id;
@@ -49,7 +57,17 @@ export class AvailabilityContextLoader {
         select: { id: true, resourceTypeId: true, name: true, resourceType: { select: { kind: true } } },
       }),
       this.prisma.appointmentSegment.findMany({
-        where: { organizationId, occupies: true, appointment: { locationId }, startsAt: { lt: range.to }, blockEndsAt: { gt: range.from } },
+        where: {
+          organizationId,
+          occupies: true,
+          appointment: {
+            locationId,
+            ...(opts.excludeAppointmentId !== undefined ? { id: { not: opts.excludeAppointmentId } } : {}),
+            NOT: { status: "HELD", holdExpiresAt: { lte: now } },
+          },
+          startsAt: { lt: range.to },
+          blockEndsAt: { gt: range.from },
+        },
         select: { staffUserId: true, resourceId: true, startsAt: true, blockEndsAt: true },
       }),
     ]);
@@ -72,6 +90,6 @@ export class AvailabilityContextLoader {
       resources: resources.map((r) => ({ id: r.id, resourceTypeId: r.resourceTypeId, name: r.name, kind: r.resourceType.kind })),
       busy,
     };
-    return { rows, context: toEngineContext(rows, new Date()) };
+    return { rows, context: toEngineContext(rows, now) };
   }
 }

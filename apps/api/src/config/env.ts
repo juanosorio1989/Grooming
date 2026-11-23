@@ -109,6 +109,8 @@ const EnvSchema = z
     TRUST_PROXY: trustProxy.default("false"),
     /** Google OAuth client IDs accepted as ID token `aud`. Empty = Google sign-in off. */
     GOOGLE_OAUTH_CLIENT_IDS: csvList.default(""),
+    /** Release expired holds every N ms; 0 = off (tests drive the sweeper directly). Max = the setInterval limit. */
+    HOLD_SWEEPER_INTERVAL_MS: z.coerce.number().int().min(0).max(2_147_483_647).default(60000),
   })
   .superRefine((e, ctx) => {
     const require = (key: keyof typeof e, message: string) => {

@@ -8,7 +8,7 @@
  * Staff get no passwords; medical notes are not seeded (no encryption key).
  * Run: pnpm --filter @grooming/api db:seed (uses DATABASE_URL).
  */
-import { type Prisma, PrismaClient, type ResourceKind, type SizeClass } from "@prisma/client";
+import { type CoatType, type Prisma, PrismaClient, type ResourceKind, type SizeClass } from "@prisma/client";
 import { LocationSettingsSchema, PriceMatrixSchema, type PriceMatrix } from "@grooming/contracts";
 import { sizeClassFromWeight } from "@grooming/pricing";
 import { checkStageRule } from "../src/catalog/stage-rule.js";
@@ -229,9 +229,9 @@ async function seedStaff(tx: Tx, orgId: string, locationId: string, serviceIds: 
   return staffIds;
 }
 
-async function seedCustomers(tx: Tx, orgId: string): Promise<Map<string, { id: string; customerId: string; sizeClass: SizeClass; weightG: number; coatType: string; species: "DOG" | "CAT" }>> {
+async function seedCustomers(tx: Tx, orgId: string): Promise<Map<string, { id: string; customerId: string; sizeClass: SizeClass; weightG: number; coatType: CoatType; species: "DOG" | "CAT" }>> {
   const now = Date.now();
-  const pets = new Map<string, { id: string; customerId: string; sizeClass: SizeClass; weightG: number; coatType: string; species: "DOG" | "CAT" }>();
+  const pets = new Map<string, { id: string; customerId: string; sizeClass: SizeClass; weightG: number; coatType: CoatType; species: "DOG" | "CAT" }>();
   for (const c of CUSTOMERS) {
     const found = await tx.customer.findFirst({ where: { organizationId: orgId, phoneE164: c.phoneE164 } });
     const data = { name: c.name, email: c.email, locale: c.locale };
@@ -346,8 +346,10 @@ async function seedVisits(
         organizationId: orgId,
         appointmentId: appointment.id,
         petId: pet.id,
+        position: 0,
         status: "PICKED_UP",
         sizeClassAtBooking: pet.sizeClass,
+        coatTypeAtBooking: pet.coatType,
         sizeClassAtCheckin: pet.sizeClass,
         weightGAtCheckin: pet.weightG,
         kennelResourceId: v.kennel ? resourceId(v.kennel) : null,
