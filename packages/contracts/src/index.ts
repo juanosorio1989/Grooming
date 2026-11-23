@@ -12,3 +12,4 @@ export * from "./pets";
 export * from "./public";
 export * from "./availability";
 export * from "./booking";
+export * from "./account";

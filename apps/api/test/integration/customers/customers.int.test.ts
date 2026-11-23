@@ -123,7 +123,7 @@ describe("customers", () => {
     expect((await call("get", `/v1/staff/customers/${other.customerId}`, owner)).status).toBe(404);
   });
 
-  it("/me: GET, PATCH locale with CUSTOMER audit, staff token 403, deleted customer 404", async () => {
+  it("/me: GET, PATCH locale with CUSTOMER audit, staff token 403, deleted customer 401", async () => {
     const token = await customerToken(ctx.app, { sub: f.customerId, org: f.orgId });
     const got = await call("get", "/v1/me", token);
     expect(got.status).toBe(200);
@@ -139,6 +139,7 @@ describe("customers", () => {
     expect((await call("get", "/v1/me", owner)).status).toBe(403);
     expect((await call("get", "/v1/me")).status).toBe(401);
     await ctx.prisma.customer.update({ where: { id: f.customerId }, data: { deletedAt: new Date() } });
-    expect((await call("get", "/v1/me", token)).status).toBe(404);
+    expect((await call("get", "/v1/me", token)).status).toBe(401);
+    expect((await call("patch", "/v1/me", token).send({ locale: "es" })).status).toBe(401);
   });
 });

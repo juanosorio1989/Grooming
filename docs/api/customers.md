@@ -17,9 +17,49 @@ for OWNER and RECEPTION only; EMPLOYEE responses omit the field. Soft-deleted cu
 
 ## Owner (`CustomerAuth`)
 
-- `GET /me` -> `MeView` (404 if the customer is soft-deleted). `MeView` is `CustomerView` plus
+- `GET /me` -> `MeView`. `MeView` is `CustomerView` plus
   `identities: [{ provider: "GOOGLE", email }]` (`[]` when no sign-in account is linked; the Google `sub` is never shown).
 - `PATCH /me` `{ name?, email?, locale?, emergencyPhone? }` -> `MeView`. Audit `customer.update` with `actorType: CUSTOMER`.
 - Link or unlink Google: `POST`/`DELETE /me/identities/google`, see [owner sign-in](owner-sign-in.md#profile-link-and-unlink).
 - Staff customer views (`/staff/customers*`) do not include `identities`.
+- `GET /me/export` -> `MeExport`, see below.
+- `DELETE /me` -> 204, see below.
+- A soft-deleted customer's token (it outlives `DELETE /me` until it expires) gets `401 UNAUTHORIZED`
+  on `/me`, `/me/export`, `DELETE /me` and `/me/appointments*`.
 - Staff tokens get 403.
+
+## Export (`GET /me/export`)
+
+Contract: `MeExportSchema` in `packages/contracts/src/account.ts`. Deleted customer 401 first, then
+rate limit `me:export:<customerId>` 5 per hour (`429 RATE_LIMITED`).
+
+`{ exportedAt, customer: CustomerView, identities: [{ provider, email, linkedAt }], consents: [{ channel,
+granted, source, changedAt }], pets: PetView[] (live pets, with vaccines and decrypted medical notes),
+appointments: AppointmentView[] (bookings only, never holds), media: [{ id, kind, petId, createdAt }] }`.
+Media covers every pet of the customer (also removed ones) and has no download links yet (Plan 05).
+Never includes staff-only private notes or the Google `sub`.
+
+## Account deletion (`DELETE /me`)
+
+Irreversible, one transaction (`apps/api/src/customers/account.service.ts`). Lock order: customer
+`FOR UPDATE`, then pets, then appointments (the order every booking write follows).
+
+1. Not-yet-started appointments (`appointmentStartsAt` after now): `HELD` ones are released
+   (`HOLD_RELEASED`, by `CUSTOMER`, no outbox row); `BOOKED` ones are cancelled like any cancel
+   (reason `ACCOUNT_DELETED`, `occupies = false`, visits `CANCELLED`, outbox `appointment.cancelled`).
+   `IN_SHOP`, started and finished appointments are untouched.
+2. Pets: the `PET_PHOTO` and `VACCINE_CARD` media rows are deleted (after nulling `photoMediaId` and
+   deleting the vaccines), with one outbox `media.purge { objectKeys }` when there were any; the
+   Plan 05 worker deletes the files. `BEFORE`, `AFTER` and `STEP` media stay. Every pet becomes
+   `name "Deleted pet"`, `breed "-"`, with breed code, birth date, medical and behavior notes, vet
+   name and phone cleared and empty allergies and temperament; live pets get `deletedAt`.
+3. Identities deleted; unprocessed outbox rows whose `payload.customerId` is this customer deleted.
+4. Customer: `name`, `email`, `emergencyPhone`, private notes cleared, `phone = "deleted:<id>"`
+   (keeps the per-organization phone index unique), `deletedAt` set. Consents stay as evidence.
+5. Customer refresh tokens revoked.
+6. The keys `name`, `phone`, `email`, `emergencyPhone` are stripped from `before`/`after` of every
+   audit row with `entity = customer` for this customer; then audit `customer.delete`
+   `{ petsDeleted, appointmentsCancelled }`.
+
+Visits and visit media stay for the shop, linked to the anonymized pet. A Google link racing the
+delete either finishes first (and its identity is deleted) or sees the deleted customer (`409`/`404`).
