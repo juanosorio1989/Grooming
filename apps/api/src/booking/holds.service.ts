@@ -109,6 +109,10 @@ export class HoldsService {
       // Customer first (the branch lock order): a concurrent `DELETE /me` either commits first (401 here)
       // or waits for this hold and then releases it. The check above ran outside this transaction.
       if (principal) await assertActiveCustomer(tx, orgId, principal.sub, "update");
+      // Then the hold being replaced (customer → appointment), and only then other expired holds.
+      if (body.replaceHoldId !== undefined) {
+        await tx.$queryRaw`SELECT id FROM appointment WHERE id = ${body.replaceHoldId}::uuid AND organization_id = ${orgId}::uuid FOR UPDATE`;
+      }
       await this.release.releaseExpired(tx, now, orgId);
       if (body.replaceHoldId !== undefined) {
         // Re-read in the transaction: it may have expired (just released) or been confirmed since.

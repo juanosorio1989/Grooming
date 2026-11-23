@@ -43,7 +43,7 @@ export class AccountService {
 
   /**
    * Deleted customer 401 first, then the rate limit (`me:export:<customerId>`, 5 per hour).
-   * Live pets with vaccines; bookings only (holds and released holds are left out);
+   * Every pet with vaccines (removed ones too, with `deletedAt`); bookings only (holds and released holds are left out);
    * media rows of every pet of the customer, without links. Never private notes or
    * provider subjects.
    */
@@ -64,7 +64,8 @@ export class AccountService {
         orderBy: [{ changedAt: "asc" }, { id: "asc" }],
       }),
       this.prisma.pet.findMany({
-        where: { organizationId: orgId, customerId: p.sub, deletedAt: null },
+        // Removed pets too: visits and media can still point to them.
+        where: { organizationId: orgId, customerId: p.sub },
         include: withVaccines,
         orderBy: [{ name: "asc" }, { id: "asc" }],
       }),
@@ -94,7 +95,7 @@ export class AccountService {
       },
       identities: identities.map((i) => ({ provider: i.provider, email: i.email, linkedAt: i.createdAt.toISOString() })),
       consents: consents.map((c) => ({ channel: c.channel, granted: c.granted, source: c.source, changedAt: c.changedAt.toISOString() })),
-      pets: pets.map((row) => this.pets.view(row)),
+      pets: pets.map((row) => ({ ...this.pets.view(row), deletedAt: row.deletedAt?.toISOString() ?? null })),
       appointments: appointments.map(toAppointmentView),
       media: media.map((m) => ({ id: m.id, kind: m.kind, petId: m.petId, createdAt: m.createdAt.toISOString() })),
     };

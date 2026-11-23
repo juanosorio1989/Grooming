@@ -152,6 +152,11 @@ describe("/v1/me/export and DELETE /v1/me", () => {
     const booked = await book(token, local("08:00"));
     const past = await pastVisit();
     const before = await media("BEFORE", `visits/${past.visitId}/before.jpg`, past.visitId);
+    // A removed pet is exported too (visits and media may still point to it), with its deletedAt.
+    const removedAt = new Date("2026-01-02T03:04:05.000Z");
+    const removed = await ctx.prisma.pet.create({
+      data: { organizationId: f.orgId, customerId: f.customerId, name: "Old", species: "CAT", breed: "Siamese", deletedAt: removedAt },
+    });
     // Another customer's data is never exported.
     const other = await otherCustomer();
     await ctx.prisma.customerIdentity.create({
@@ -167,9 +172,11 @@ describe("/v1/me/export and DELETE /v1/me", () => {
     expect(res.body.identities).toEqual([{ provider: "GOOGLE", email: "ana@gmail.com", linkedAt: identity.createdAt.toISOString() }]);
     expect(JSON.stringify(res.body)).not.toContain("g-sub-export");
     expect(res.body.consents).toEqual([expect.objectContaining({ channel: "WHATSAPP", granted: true, source: "BOOKING_FORM" })]);
-    expect(res.body.pets).toHaveLength(1);
-    expect(res.body.pets[0]).toMatchObject({ id: f.petId, name: "Max", photoMediaId: photo.id, behaviorNotes: "Bites at the dryer", medicalNotes: "Allergic to soap" });
-    expect(res.body.pets[0].vaccines).toEqual([expect.objectContaining({ id: vaccine.id, type: "RABIES", cardMediaId: card.id })]);
+    expect(res.body.pets.map((p: { id: string }) => p.id).sort()).toEqual([f.petId, removed.id].sort());
+    const max = res.body.pets.find((p: { id: string }) => p.id === f.petId);
+    expect(max).toMatchObject({ name: "Max", photoMediaId: photo.id, behaviorNotes: "Bites at the dryer", medicalNotes: "Allergic to soap", deletedAt: null });
+    expect(res.body.pets.find((p: { id: string }) => p.id === removed.id)).toMatchObject({ name: "Old", deletedAt: removedAt.toISOString() });
+    expect(max.vaccines).toEqual([expect.objectContaining({ id: vaccine.id, type: "RABIES", cardMediaId: card.id })]);
     expect(res.body.appointments.map((a: { id: string }) => a.id).sort()).toEqual([booked, past.appointmentId].sort());
     expect(res.body.media.map((m: { id: string }) => m.id).sort()).toEqual([photo.id, card.id, before.id].sort());
     expect(res.body.media.find((m: { id: string }) => m.id === before.id)).toEqual({

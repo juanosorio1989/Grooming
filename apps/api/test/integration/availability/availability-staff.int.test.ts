@@ -198,6 +198,14 @@ describe("GET /v1/availability (staff mode)", () => {
     expect(cancelled.body.code).toBe("NOT_FOUND");
   });
 
+  it("excludeAppointmentId of a BOOKED appointment whose customer is soft-deleted → 404 NOT_FOUND (as PATCH /staff/appointments/:id)", async () => {
+    const id = await bookedAt0800();
+    await ctx.prisma.customer.update({ where: { id: f.customerId }, data: { deletedAt: new Date() } });
+    const res = await get({ from: FROM, excludeAppointmentId: id }, await staff());
+    expect(res.status).toBe(404);
+    expect(res.body.code).toBe("NOT_FOUND");
+  });
+
   /** Another organization with a customer and a BOOKED appointment. */
   async function foreignOrg() {
     const org = await ctx.prisma.organization.create({ data: { name: "Other Grooming", slug: "other-salon", defaultLocale: "en" } });

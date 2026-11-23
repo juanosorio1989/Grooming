@@ -1,7 +1,7 @@
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppointmentViewSchema, MAX_PETS_PER_CUSTOMER } from "@grooming/contracts";
-import { HoldReleaseService } from "../../../src/booking/hold-release.service.js";
+import { HoldsService } from "../../../src/booking/holds.service.js";
 import { createIntegrationApp, resetState } from "../app.js";
 import { FROM, seedBookableTuesday } from "../bookable-day.js";
 import { seedFixture, type Fixture } from "../helpers.js";
@@ -201,6 +201,24 @@ describe("POST /v1/appointments (confirm a hold)", () => {
     expect((await holdReq(body)).status).toBe(201);
   });
 
+  it("hold that expires between the expiry check and the booking transaction → 409 HOLD_EXPIRED (not 404); appointment still HELD", async () => {
+    const token = await ownerToken();
+    const holdId = await savedHold(token);
+    // The first (unlocked) read sees a live hold; the hold expires right after it, before the booking transaction.
+    const holds = ctx.app.get(HoldsService);
+    const loadUsable = holds.loadUsable.bind(holds);
+    vi.spyOn(holds, "loadUsable").mockImplementation(async (tx, id, principal, opts) => {
+      const row = await loadUsable(tx, id, principal, opts);
+      if (!opts?.lock) await ctx.prisma.appointment.update({ where: { id: holdId }, data: { holdExpiresAt: new Date(Date.now() - MIN) } });
+      return row;
+    });
+    const res = await confirm({ holdId }, token);
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe("HOLD_EXPIRED");
+    // The booking transaction rolled back; the sweeper or the next write releases the hold.
+    expect((await appt(holdId)).status).toBe("HELD");
+  });
+
   it("saved pet soft-deleted after the hold → 409 PET_UNAVAILABLE; appointment still HELD", async () => {
     const token = await ownerToken();
     const holdId = await savedHold(token);
@@ -315,16 +333,21 @@ describe("POST /v1/appointments (confirm a hold)", () => {
   it("two concurrent confirms of the same hold → one 201, one 404", async () => {
     const token = await ownerToken();
     const { holdId } = await anonymousHold();
-    // Barrier on the first statement of each main transaction: both requests are past the expiry check.
-    const release = ctx.app.get(HoldReleaseService);
-    const original = release.releaseExpired.bind(release);
+    // Barrier after the expiry check (the unlocked read of step 1): both requests then enter the main
+    // transaction together. The main transaction takes the customer and hold locks first, so a barrier
+    // inside it would block one request behind the other's locks.
+    const holds = ctx.app.get(HoldsService);
+    const original = holds.loadUsable.bind(holds);
     let arrived = 0;
     let open!: () => void;
     const gate = new Promise<void>((resolve) => (open = resolve));
-    vi.spyOn(release, "releaseExpired").mockImplementation(async (...args) => {
-      if (++arrived === 2) open();
-      await gate;
-      return original(...args);
+    vi.spyOn(holds, "loadUsable").mockImplementation(async (tx, id, principal, opts) => {
+      const row = await original(tx, id, principal, opts);
+      if (!opts?.lock) {
+        if (++arrived === 2) open();
+        await Promise.race([gate, new Promise((r) => setTimeout(r, 2_000))]);
+      }
+      return row;
     });
 
     const [r1, r2] = await Promise.all([confirm({ holdId }, token), confirm({ holdId }, token)]);

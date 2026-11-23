@@ -174,16 +174,20 @@ describe("/v1/holds", () => {
     expect(await ctx.prisma.appointment.count()).toBe(1);
   });
 
-  it("an expired overlapping hold does not block a new hold", async () => {
+  it("an expired overlapping hold does not block a new hold; the released hold's pending pet keeps only ref and species", async () => {
     const { body } = await firstInline();
     const first = await hold(body);
     expect(first.status).toBe(201);
     await ctx.prisma.appointment.update({ where: { id: first.body.holdId }, data: { holdExpiresAt: new Date(Date.now() - MIN) } });
     const second = await hold(body);
     expect(second.status).toBe(201);
-    const old = await ctx.prisma.appointment.findUniqueOrThrow({ where: { id: first.body.holdId }, include: { segments: true } });
+    const old = await ctx.prisma.appointment.findUniqueOrThrow({ where: { id: first.body.holdId }, include: { segments: true, petVisits: true } });
     expect(old).toMatchObject({ status: "CANCELLED", cancelReason: "HOLD_EXPIRED", cancelledBy: "SYSTEM" });
     expect(old.segments.every((s) => !s.occupies)).toBe(true);
+    expect(old.petVisits.map((v) => v.pendingPet)).toEqual([{ ref: "new-1", species: "DOG" }]);
+    // The live hold keeps the details it needs for the confirm step.
+    const live = await ctx.prisma.petVisit.findFirstOrThrow({ where: { appointmentId: second.body.holdId } });
+    expect(live.pendingPet).toMatchObject({ ref: "new-1", name: "Max", breed: "Poodle" });
   });
 
   it("two concurrent holds on the last free kennel (one kennel left, Promise.all) → one 201, one 409; one KENNEL segment", async () => {
@@ -294,14 +298,15 @@ describe("/v1/holds", () => {
     expect((await cancel(res.body.holdId)).status).toBe(404);
   });
 
-  it("DELETE /holds/:id → 204 and segments no longer occupy; again → 404", async () => {
+  it("DELETE /holds/:id → 204, segments no longer occupy and the pending pet keeps only ref and species; again → 404", async () => {
     const { body } = await firstInline();
     const res = await hold(body);
     const del = await cancel(res.body.holdId);
     expect(del.status).toBe(204);
-    const row = await ctx.prisma.appointment.findUniqueOrThrow({ where: { id: res.body.holdId }, include: { segments: true } });
+    const row = await ctx.prisma.appointment.findUniqueOrThrow({ where: { id: res.body.holdId }, include: { segments: true, petVisits: true } });
     expect(row).toMatchObject({ status: "CANCELLED", cancelReason: "HOLD_RELEASED", cancelledBy: "CUSTOMER" });
     expect(row.segments.every((s) => !s.occupies)).toBe(true);
+    expect(row.petVisits.map((v) => v.pendingPet)).toEqual([{ ref: "new-1", species: "DOG" }]);
     const again = await cancel(res.body.holdId);
     expect(again.status).toBe(404);
     expect(again.body.code).toBe("NOT_FOUND");

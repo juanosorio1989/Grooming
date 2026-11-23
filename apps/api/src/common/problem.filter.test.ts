@@ -1,7 +1,7 @@
 import { type ArgumentsHost, Logger } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
-import { pgSqlState } from "./pg-error.js";
+import { isTxConflict, pgSqlState } from "./pg-error.js";
 import { ProblemFilter } from "./problem.filter.js";
 
 /** Runs the filter against a fake Express response and returns status and parsed body. */
@@ -52,9 +52,43 @@ describe("ProblemFilter", () => {
     }
   });
 
+  it.each([
+    ["40P01 (deadlock)", new Prisma.PrismaClientUnknownRequestError('PostgresError { code: "40P01", message: "deadlock detected" }', { clientVersion: "6.19.3" })],
+    ["40001 (serialization)", new Prisma.PrismaClientKnownRequestError("boom", { code: "P2010", clientVersion: "6.19.3", meta: { code: "40001" } })],
+    ["P2034 (write conflict)", new Prisma.PrismaClientKnownRequestError("boom", { code: "P2034", clientVersion: "6.19.3" })],
+  ])("maps a transaction conflict %s to 409 CONFLICT with a warn log", (_name, err) => {
+    const warn = vi.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined);
+    try {
+      const r = run(err);
+      expect(r.status).toBe(409);
+      expect(r.body).toMatchObject({ status: 409, code: "CONFLICT" });
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0]?.[0]).toBe("CONFLICT: transaction aborted by a lock or serialization conflict");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("keeps other unknown Prisma errors as 500 INTERNAL", () => {
     const err = new Prisma.PrismaClientUnknownRequestError('PostgresError { code: "23514" }', { clientVersion: "6.19.3" });
     expect(run(err)).toMatchObject({ status: 500, body: { code: "INTERNAL" } });
+  });
+});
+
+const known = (code: string, meta?: Record<string, unknown>) =>
+  new Prisma.PrismaClientKnownRequestError("boom", { code, clientVersion: "6", ...(meta ? { meta } : {}) });
+
+describe("isTxConflict", () => {
+  it("recognizes write-conflict, serialization and deadlock aborts", () => {
+    expect(isTxConflict(known("P2034"))).toBe(true);
+    expect(isTxConflict(known("P2010", { code: "40P01" }))).toBe(true);
+    expect(isTxConflict(known("P2010", { code: "40001" }))).toBe(true);
+    expect(isTxConflict(new Error("Raw query failed. Code: `40P01`. Message: `deadlock detected`"))).toBe(true);
+  });
+  it("ignores other errors", () => {
+    expect(isTxConflict(known("P2002"))).toBe(false);
+    expect(isTxConflict(new Error("connection reset"))).toBe(false);
+    expect(isTxConflict(null)).toBe(false);
   });
 });
 

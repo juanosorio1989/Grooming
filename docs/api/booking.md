@@ -33,11 +33,12 @@ customer is 401 here, before any 400) → a new pet with `weightG` must have the
 (`settings.sizeThresholdsLb`) → the context for the slot's local
 day plus one (excluding `replaceHoldId`) → the booking mode must match the services → `validatePlan` (online mode).
 Then one transaction: with a customer token, lock the customer `FOR UPDATE` (401 if deleted meanwhile;
-customer first, the branch lock order) → release expired holds of the organization → release `replaceHoldId` (rules below) → insert the
+customer first, the branch lock order) → lock `replaceHoldId` `FOR UPDATE` → release expired holds of the organization → release `replaceHoldId` (rules below) → insert the
 appointment (`HELD`, source `ONLINE`, `customer_id` = token or null, `hold_expires_at` = now + `holdMinutes`,
 `drop_off_at` = slot start in drop-off mode, `estimated_ready_at` = slot `readyAt`) → `PlanWriter.insert`. A new pet
-is stored in `pet_visit.pending_pet` (`ref`, `species`, `name`, `breed`, `breedCode`, `weightG`). No audit and no
-outbox rows for holds.
+is stored in `pet_visit.pending_pet` (`ref`, `species`, `name`, `breed`, `breedCode`, `weightG`). When a hold is
+released (expired or replaced/deleted), `pending_pet` is cut to `{ ref, species }`: only `HELD` holds are ever read
+back. No audit and no outbox rows for holds.
 
 - **Ownership:** a hold with a customer is usable only with that customer's token; an anonymous hold by anyone who
   has its id. Anything else, another organization's hold, or a hold that is not `HELD` is 404.
@@ -84,9 +85,9 @@ Steps, in this order:
 1. **Expiry**, in its own transaction: when the hold is usable (ownership rule above, else 404) and
    `hold_expires_at <= now`, it is released (`HOLD_EXPIRED`, by `SYSTEM`) and committed, then 409 `HOLD_EXPIRED`.
    The slot is free again at once.
-2. **Main transaction:** release expired holds → lock the customer `FOR UPDATE` (401 if deleted) → lock the hold
-   `FOR UPDATE` and re-check it (`HELD`, usable, not expired). A concurrent confirm of the same hold waits here and
-   then gets 404. Every saved pet of the hold must still be the customer's and not deleted, else 409
+2. **Main transaction:** lock the customer `FOR UPDATE` (401 if deleted) → lock the hold `FOR UPDATE` and re-check
+   it (`HELD`, usable, not expired: a hold that expired since step 1 is 409 `HOLD_EXPIRED`, not 404) → lock the pets
+   (below) → release expired holds. A concurrent confirm of the same hold waits here and then gets 404. Every saved pet of the hold must still be the customer's and not deleted, else 409
    `PET_UNAVAILABLE` and the hold stays `HELD`. The saved pets and the `usePets` choices are locked `FOR SHARE` in one
    id-ordered statement (the order `PetMergeService` uses), so a concurrent merge cannot deadlock with a confirm. The customer lock is `FOR UPDATE`, not `FOR SHARE`, because
    saving a pet locks the customer `FOR UPDATE` and two confirms upgrading a shared lock would deadlock.
@@ -139,7 +140,7 @@ a `CANCELLED` visit keeps after a reschedule never set the start; a fully cancel
 **Change rule (cancel and reschedule):** only `BOOKED` (else 409 `CONFLICT`), and only while
 `now <= startsAt - settings.cancelWindowHours` (else 409 `OUTSIDE_CANCEL_WINDOW`).
 
-**Cancel:** one transaction: release expired holds → lock the appointment `FOR UPDATE` → load it (404) → change rule
+**Cancel:** one transaction: lock the appointment `FOR UPDATE` → release expired holds → load it (404) → change rule
 → `cancelInTx`. `cancelInTx(tx, appt, by)` (shared with staff cancel and account deletion; the caller loads the row
 org-scoped and locks it): conditional update from `BOOKED` (409 `CONFLICT` otherwise) to `CANCELLED` with
 `cancelled_at`, `cancel_reason` (`by.reason`; null for the owner), `cancelled_by` (`CUSTOMER` or `STAFF`),
@@ -158,8 +159,8 @@ before any slot check); then validated outside the transaction: pets rebuilt wit
 `fromAppointment` (404; 409 `CONFLICT` for a pet not saved yet) → the slot must list those pets in the same order
 (400 `slot.pets`; an unknown pet is 400 `slot.pets.<i>`) → a slot more than 400 days away is 400 `slot.startsAt` → the
 context for the slot's local day plus one, without the appointment's own segments → the booking mode must match
-(400 `slot.bookingMode`) → `validatePlan` (`verdictError`). Then one transaction: release expired holds → lock the
-appointment `FOR UPDATE` → re-check `BOOKED` (409 `CONFLICT`) → `PlanWriter.replace` (old segments deleted, new ones
+(400 `slot.bookingMode`) → `validatePlan` (`verdictError`). Then one transaction: lock the appointment `FOR UPDATE`
+→ release expired holds → re-check `BOOKED` (409 `CONFLICT`) → `PlanWriter.replace` (old segments deleted, new ones
 inserted) → `booking_mode` from the slot, `manage_version + 1` → outbox `appointment.changed` `{ appointmentId }` →
 audit `appointment.reschedule` or `appointment.move` with `before { startsAt, readyAt }` and
 `after { startsAt, readyAt, override }`. A time someone else took meanwhile is 409 `SLOT_TAKEN`, either from
@@ -196,8 +197,8 @@ segment assigned to them (else 404). Holds (live or released) are never visible:
 → `resolve(pets, customerId)` → the new-pet weight/size check (`assertNewPetSizes`, 400 `pets.<i>.sizeClass`) → slot
 (400 out of range or bad booking mode) → `validatePlan` in `STAFF` mode with `override` (`verdictError`). Staff mode
 skips the lead time, horizon and online-bookable checks; `override` also ignores working hours, location hours and
-drop-off windows. Then one transaction: release expired holds → customer `FOR UPDATE` (deleted meanwhile 404) → saved
-pets `FOR SHARE` (deleted or merged meanwhile 409 `PET_UNAVAILABLE`) → new pets created with `createInTx` (staff
+drop-off windows. Then one transaction: customer `FOR UPDATE` (deleted meanwhile 404) → saved pets `FOR SHARE`
+(deleted or merged meanwhile 409 `PET_UNAVAILABLE`) → release expired holds → new pets created with `createInTx` (staff
 actor, `pet.create` audit) → appointment `BOOKED`, source `RECEPTION`, `created_by_staff_id` = caller →
 `PlanWriter.insert` with the saved pet ids → audit `appointment.create` (`after { source, status, override,
 customerId, petIds, startsAt, readyAt }`; never notes, names or phones) → outbox `appointment.booked`. A `23P01` rolls
@@ -211,7 +212,7 @@ taken only when `start <= now + slotIntervalMin`. No slot, or a later one, is 40
 **Move:** an appointment whose customer is soft-deleted is 404; otherwise `replaceSlot(id, slot, { mode: "STAFF",
 override, action: "appointment.move", actorType: "STAFF" })` (see above). No cancel window for staff.
 
-**Status:** one transaction: release expired holds → lock the appointment `FOR UPDATE` → load it (404) → must be
+**Status:** one transaction: lock the appointment `FOR UPDATE` → release expired holds → load it (404) → must be
 `BOOKED` (else 409 `CONFLICT`). `CANCEL` → `cancelInTx` with `reason` in `cancel_reason`, `cancelled_by` `STAFF`.
 `NO_SHOW` needs `now >= startsAt` (`appointmentStartsAt`; earlier is 409 `CONFLICT`): status `NO_SHOW`,
 `manage_version + 1`, every segment `occupies = false`, every visit not already `CANCELLED` becomes `NO_SHOW`, audit
@@ -229,8 +230,16 @@ override, action: "appointment.move", actorType: "STAFF" })` (see above). No can
 ## Write order
 
 Validate outside the transaction (load the context, `validatePlan`; a rejection goes through `verdictError`) →
-`prisma.$transaction` → `HoldReleaseService.releaseExpired(tx, now, orgId)` → writes. A `23P01` exclusion violation
-is a lost race: the problem filter answers `409 SLOT_TAKEN` and logs the constraint name at `warn`.
+`prisma.$transaction` → row locks (customer → pets → appointment) → `HoldReleaseService.releaseExpired(tx, now,
+orgId)` → writes. `releaseExpired` locks rows the caller does not own (expired holds, `SKIP LOCKED`), so it always
+comes after the caller's own row locks: taking it first would invert the branch lock order against `DELETE /me`
+(customer → pets → appointments) and could deadlock.
+
+A `23P01` exclusion violation is a lost race: the problem filter answers `409 SLOT_TAKEN` and logs the constraint name
+at `warn`. A transaction Postgres aborts for a deadlock (`40P01`), a serialization failure (`40001`) or a Prisma write
+conflict (`P2034`) is also a lost race, never a 500: `409 CONFLICT`, logged at `warn` (`isTxConflict` in
+`common/pg-error.ts`). Two writes that meet on the segments of an expired hold one of them is releasing can still
+deadlock on the exclusion constraint; one wins (200) and the other gets this 409.
 
 ## Pieces
 
@@ -244,7 +253,7 @@ is a lost race: the problem filter answers `409 SLOT_TAKEN` and logs the constra
 | `engineError(err)` | Engine input errors → 400 (see [Availability](availability.md#errors)) |
 | `PlanWriter.insert(tx, appointmentId, write)` | For an existing appointment: one `pet_visit` per pet (`position` = index, size/coat snapshots, `pending_pet` or `pet_id`, preferred groomer or null, `kennel_resource_id` from the KENNEL segment, quoted price), `pet_visit_service` rows from the price matrix (`lookupPrice`), and one `appointment_segment` per planned segment (`service_id` only when the segment has one service, `staff_user_id` = employee, times and snapshots from the plan) |
 | `PlanWriter.replace(tx, appointmentId, write)` | Reschedule/move: deletes the segments of the live visits (not `CANCELLED`, position order: the same list `fromAppointment` returns, matched by index), inserts the new ones, refreshes service snapshots (upsert; never deletes, so the slot must keep the same services), quoted price, kennel, `drop_off_at` and `estimated_ready_at`. Returns `before`/`after` `{ startsAt, readyAt }` for the audit |
-| `HoldReleaseService.releaseExpired(tx, now, orgId?)` | HELD rows with `hold_expires_at <= now` (`FOR UPDATE SKIP LOCKED`, at most 500): `CANCELLED`, `cancel_reason` `HOLD_EXPIRED`, `cancelled_by` `SYSTEM`; segments `occupies = false`; visits `CANCELLED`. Returns the count |
+| `HoldReleaseService.releaseExpired(tx, now, orgId?)` | HELD rows with `hold_expires_at <= now` (`FOR UPDATE SKIP LOCKED`, at most 500): `CANCELLED`, `cancel_reason` `HOLD_EXPIRED`, `cancelled_by` `SYSTEM`; segments `occupies = false`; visits `CANCELLED`; `pending_pet` cut to `{ ref, species }`. Called after the caller's row locks. Returns the count |
 | `HoldReleaseService.release(tx, id, reason, by)` | The same for one HELD appointment; false when it is not HELD |
 | `HoldsService.loadUsable(tx, holdId, principal, { lock? })` | A `HELD` appointment of this organization the principal may use (ownership rule above), else 404. Does not check expiry. With `lock`, `FOR UPDATE` on the row first (confirm). Always used before `release`, which has no organization filter |
 | `toAppointmentView` / `toStaffAppointmentView` / `APPOINTMENT_VIEW_INCLUDE` (`appointment-view.ts`) | Pure mapper from an appointment loaded with `APPOINTMENT_VIEW_INCLUDE` (visits by position with pet name, services, segments by start) to the owner or staff view. Throws on a visit without a saved pet (holds have their own view) |

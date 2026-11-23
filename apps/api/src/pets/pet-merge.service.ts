@@ -2,20 +2,12 @@ import { ConflictException, Injectable, NotFoundException } from "@nestjs/common
 import { Prisma, type PetVaccine } from "@prisma/client";
 import type { PetView } from "@grooming/contracts";
 import { AuditService } from "../audit/audit.service.js";
+import { isTxConflict } from "../common/pg-error.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { TenancyService } from "../tenancy/tenancy.service.js";
 import { PetsService, withVaccines, type PetActor, type PetRow } from "./pets.service.js";
 
 const invalid = (detail: string) => new ConflictException({ code: "PET_MERGE_INVALID", message: detail });
-
-/** True when Postgres aborted the transaction to resolve a lock or serialization conflict. */
-export function isTxConflict(err: unknown): boolean {
-  if (typeof err !== "object" || err === null) return false;
-  const e = err as { code?: unknown; meta?: { code?: unknown }; message?: unknown };
-  if (e.code === "P2034") return true;
-  if (e.meta?.code === "40001" || e.meta?.code === "40P01") return true;
-  return typeof e.message === "string" && /\b(40001|40P01)\b|deadlock detected|could not serialize/.test(e.message);
-}
 
 const isBlank = (v: unknown) => v === null || v === undefined || v === "";
 

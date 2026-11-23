@@ -2,24 +2,10 @@ import { ConflictException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { describe, expect, it } from "vitest";
 import type { PetVaccine } from "@prisma/client";
-import { PetMergeService, isTxConflict, planVaccineDedupe } from "./pet-merge.service.js";
+import { PetMergeService, planVaccineDedupe } from "./pet-merge.service.js";
 
 const known = (code: string, meta?: Record<string, unknown>) =>
   new Prisma.PrismaClientKnownRequestError("boom", { code, clientVersion: "6", ...(meta ? { meta } : {}) });
-
-describe("isTxConflict", () => {
-  it("recognizes write-conflict, serialization and deadlock aborts", () => {
-    expect(isTxConflict(known("P2034"))).toBe(true);
-    expect(isTxConflict(known("P2010", { code: "40P01" }))).toBe(true);
-    expect(isTxConflict(known("P2010", { code: "40001" }))).toBe(true);
-    expect(isTxConflict(new Error('Raw query failed. Code: `40P01`. Message: `deadlock detected`'))).toBe(true);
-  });
-  it("ignores other errors", () => {
-    expect(isTxConflict(known("P2002"))).toBe(false);
-    expect(isTxConflict(new Error("connection reset"))).toBe(false);
-    expect(isTxConflict(null)).toBe(false);
-  });
-});
 
 describe("PetMergeService.merge", () => {
   const actor = { type: "STAFF" as const, claims: { sub: "s", role: "OWNER" } as never };

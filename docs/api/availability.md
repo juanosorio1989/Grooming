@@ -68,7 +68,7 @@ An OWNER or RECEPTION token runs the engine in mode `STAFF` with `override = q.o
 - Saved pets (`petId`) need `customerId`: without it 400 `VALIDATION_FAILED` on path `customerId`. Every pet must
   belong to that customer and not be deleted, else 404. An unknown or soft-deleted `customerId` is 404 `NOT_FOUND`
   (not 401: the token is valid, the customer is the missing resource), also with inline pets only.
-- `excludeAppointmentId` may be any `BOOKED` appointment of the organization (anything else 404); its pets come from
+- `excludeAppointmentId` may be any `BOOKED` appointment of the organization whose customer is not soft-deleted (anything else 404, as `PATCH /staff/appointments/:id`); its pets come from
   the appointment as for owners. Sending `customerId` with it is 400 on `customerId` (the appointment already names
   the customer; rejecting avoids a silent mismatch).
 
@@ -91,7 +91,7 @@ Instants are ISO 8601 UTC. `startsAt` is the first segment start in wait mode an
 | Bad query (`pets` missing without `excludeAppointmentId`, both sent, staff `petId` without `customerId`, staff `customerId` with `excludeAppointmentId`, not JSON or too long, more than 4 pets, range over 7 days, unknown key) | 400 | `VALIDATION_FAILED` with `errors[].path` |
 | Saved pet or `excludeAppointmentId` without a token / bad token / token of a deleted customer | 401 | `UNAUTHORIZED` |
 | EMPLOYEE token; `override` or `customerId` from a customer or anonymous request | 403 | `FORBIDDEN` |
-| Saved pet of another customer, or deleted; `excludeAppointmentId` not a `BOOKED` appointment of the customer (staff: of the organization); staff `customerId` unknown or deleted | 404 | `NOT_FOUND` |
+| Saved pet of another customer, or deleted; `excludeAppointmentId` not a `BOOKED` appointment of the customer (staff: of the organization, with a customer that is not deleted); staff `customerId` unknown or deleted | 404 | `NOT_FOUND` |
 | Engine `NO_PRICE_FOR_PET` | 400 | `NO_PRICE_FOR_PET` |
 | Engine `STAGE_RESOURCE_MISMATCH` | 400 | `STAGE_RESOURCE_MISMATCH` |
 | Any other engine code (`UNKNOWN_SERVICE`, `SPECIES_MISMATCH`, `DUPLICATE_PET`, ...) | 400 | `VALIDATION_FAILED`, `detail` = engine code |

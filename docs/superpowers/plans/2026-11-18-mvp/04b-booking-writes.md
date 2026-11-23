@@ -88,10 +88,10 @@ shared conclusions), because this branch writes and deletes production data.
 - Paths under `/v1`. Every query filters by `organizationId = await tenancy.getOrgId()`; another organization's row is `404 NOT_FOUND`.
 - Request bodies are `.strict()` Zod objects; errors are `application/problem+json` with `code` from `ErrorCode`.
 - A customer token whose customer is soft-deleted → `401 UNAUTHORIZED` on every route of this plan (`assertActiveCustomer`, Task 2).
-- Write order: validate outside the transaction → `prisma.$transaction` → `HoldReleaseService.releaseExpired(tx, now, orgId)` → writes. Any `23P01` from Postgres → `409 SLOT_TAKEN` (global mapping, Task 1). Never 500 for a race.
+- Write order: validate outside the transaction → `prisma.$transaction` → row locks (customer → pets → appointment) → `releaseExpired` → writes. Any `23P01` from Postgres → `409 SLOT_TAKEN` (global mapping, Task 1); `40P01`, `40001` and `P2034` → `409 CONFLICT` (final review fix). Never 500 for a race.
 - Status rules: `occupies` is `false` for every segment of a `CANCELLED` or `NO_SHOW` appointment, set in the same transaction. Pet visits follow: `CANCELLED` / `NO_SHOW`.
 - Audit actions: `appointment.create`, `appointment.reschedule`, `appointment.move`, `appointment.cancel`, `appointment.no_show`, `customer.delete`. `after` holds ids, statuses, times and `override`, never names or phones.
-- Every task: `pnpm turbo run lint typecheck test build` and `pnpm --filter @grooming/api test:int` exit 0; `git grep -n -i -E 'beautyspa|bs_refresh|\bbs_' -- ':!*.md'` prints nothing. Docs change in the same commit: `docs/api/bookings.md` (new, Tasks 3–7, linked from `docs/api/README.md`), `docs/api/availability.md` (Tasks 5, 6, 9), `docs/api/customers.md` (Task 8), `docs/data/README.md` (Task 1). One commit per task, plus fix commits after review.
+- Every task: `pnpm turbo run lint typecheck test build` and `pnpm --filter @grooming/api test:int` exit 0; `git grep -n -i -E 'beautyspa|bs_refresh|\bbs_' -- ':!*.md'` prints nothing. Docs change in the same commit: `docs/api/booking.md` (new, Tasks 3–7, linked from `docs/api/README.md`), `docs/api/availability.md` (Tasks 5, 6, 9), `docs/api/customers.md` (Task 8), `docs/data/README.md` (Task 1). One commit per task, plus fix commits after review.
 - Code, comments, docs and commits in English.
 
 ## Review Focus
@@ -251,7 +251,7 @@ shared conclusions), because this branch writes and deletes production data.
 **Files:**
 - Create: `apps/api/src/booking/holds.service.ts`, `apps/api/src/booking/holds.controller.ts`, `apps/api/src/booking/hold-sweeper.ts`
 - Test: `apps/api/test/integration/booking/holds.int.test.ts`, `apps/api/test/integration/booking/hold-sweeper.int.test.ts`
-- Docs: `docs/api/bookings.md` (new), `docs/api/README.md`
+- Docs: `docs/api/booking.md` (new), `docs/api/README.md`
 
 **Interfaces:**
 - Consumes: Task 2 everything; `LocationService.getDefault()` (`settings.holdMinutes`), `RateLimitService`.
@@ -295,7 +295,7 @@ Rules:
 - [ ] **Step 3: Run them.** Run: `pnpm --filter @grooming/api test:int -- holds hold-sweeper`. Expected: FAIL.
 - [ ] **Step 4: Implement** the service, the controller (body through `ZodValidationPipe(HoldRequestSchema)`) and the sweeper (errors logged, never thrown out of the interval).
 - [ ] **Step 5: Run the same command.** Expected: PASS.
-- [ ] **Step 6: Write `docs/api/bookings.md`** (hold request with an example body, ownership, expiry, `replaceHoldId`, error table, sweeper), link it from `docs/api/README.md`, run every check, commit `feat(api): slot holds with new pets, hold sweeper`.
+- [ ] **Step 6: Write `docs/api/booking.md`** (hold request with an example body, ownership, expiry, `replaceHoldId`, error table, sweeper), link it from `docs/api/README.md`, run every check, commit `feat(api): slot holds with new pets, hold sweeper`.
 
 ---
 
@@ -305,7 +305,7 @@ Rules:
 - Create: `apps/api/src/booking/appointments.service.ts`, `apps/api/src/booking/appointments.controller.ts`, `apps/api/src/booking/appointment-view.ts` (pure mapper)
 - Modify: `apps/api/src/pets/pets.service.ts` (extract `createInTx`), `apps/api/src/pets/pets.module.ts` (export `PetsService` if needed)
 - Test: `apps/api/test/integration/booking/confirm.int.test.ts`
-- Docs: `docs/api/bookings.md`
+- Docs: `docs/api/booking.md`
 
 **Interfaces:**
 - Consumes: `HoldsService.loadUsable`, `HoldReleaseService.release`, `assertActiveCustomer`.
@@ -352,7 +352,7 @@ Rules, in this order:
 - Create: `apps/api/src/booking/me-appointments.controller.ts` (`@Controller("me/appointments")`)
 - Modify: `apps/api/src/booking/appointments.service.ts`, `apps/api/src/availability/availability.service.ts` (`excludeAppointmentId`)
 - Test: `apps/api/test/integration/booking/me-appointments.int.test.ts`, `availability.int.test.ts`
-- Docs: `docs/api/bookings.md`, `docs/api/availability.md`
+- Docs: `docs/api/booking.md`, `docs/api/availability.md`
 
 **Interfaces:**
 - Consumes: `PetRequestResolver.fromAppointment`, `PlanWriter.replace`, `slotFromView`, `verdictError`, `toAppointmentView`.
@@ -425,7 +425,7 @@ Rules:
 **Files:**
 - Create: `apps/api/src/booking/staff-appointments.service.ts`, `apps/api/src/booking/staff-appointments.controller.ts`
 - Test: `apps/api/test/integration/booking/staff-appointments.int.test.ts`
-- Docs: `docs/api/bookings.md`
+- Docs: `docs/api/booking.md`
 
 **Interfaces:**
 - Consumes: `PetRequestResolver.resolve`, `PlanWriter.insert`, `PetsService.createInTx`, `AppointmentsService.cancelInTx`, `AppointmentsService.replaceSlot`, `toStaffAppointmentView`, `findSlots`, `validatePlan`.

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppointmentViewSchema } from "@grooming/contracts";
 import { AvailabilityContextLoader } from "../../../src/availability/context-loader.js";
 import { AppointmentsService } from "../../../src/booking/appointments.service.js";
+import { HoldReleaseService } from "../../../src/booking/hold-release.service.js";
 import { createIntegrationApp, resetState } from "../app.js";
 import { FROM, local, seedBookableTuesday } from "../bookable-day.js";
 import { seedFixture, type Fixture } from "../helpers.js";
@@ -262,6 +263,48 @@ describe("/v1/me/appointments (owner list, detail, cancel, reschedule)", () => {
     expect(after.segments).toEqual(original);
     expect(after.manageVersion).toBe(0);
     expect(await ctx.prisma.outboxEvent.count({ where: { type: "appointment.changed" } })).toBe(0);
+  });
+
+  it("two concurrent reschedules onto a slot an unswept expired hold still covers → one 200 and one 409, never 500", async () => {
+    await setWait();
+    const token = await ownerToken();
+    const other = await otherCustomer();
+    const otherPets = [{ petId: other.petId, serviceIds: [f.serviceId] }];
+    const mine = await book(token, local("08:00"));
+    const theirs = await book(other.token, local("12:00"), otherPets);
+    // An expired hold the sweeper has not released yet covers 10:00. Availability already ignores it.
+    const h = await hold({ pets: [savedPet()], slot: (await slots(token)).find((s) => s.startsAt === local("10:00")) }, token);
+    expect(h.status).toBe(201);
+    await ctx.prisma.appointment.update({ where: { id: h.body.holdId as string }, data: { holdExpiresAt: new Date(Date.now() - 60_000) } });
+    const pick = async (id: string, t: string) =>
+      ((await availability({ excludeAppointmentId: id }, t)).body.slots as SlotView[]).find((s) => s.startsAt === local("10:00"))!;
+    const [mySlot, theirSlot] = [await pick(mine, token), await pick(theirs, other.token)];
+    expect(mySlot).toBeDefined();
+    expect(theirSlot).toBeDefined();
+
+    // Barrier: both transactions hold their own row locks before either releases the expired hold, so
+    // they overlap for real. One releases the hold (SKIP LOCKED), the other skips it and meets its segments.
+    const release = ctx.app.get(HoldReleaseService);
+    const releaseExpired = release.releaseExpired.bind(release);
+    let arrived = 0;
+    let open!: () => void;
+    const gate = new Promise<void>((resolve) => (open = resolve));
+    vi.spyOn(release, "releaseExpired").mockImplementation(async (...args) => {
+      if (++arrived === 2) open();
+      await Promise.race([gate, new Promise((r) => setTimeout(r, 2_000))]);
+      return releaseExpired(...args);
+    });
+    const results = await Promise.all([reschedule(mine, mySlot, token), reschedule(theirs, theirSlot, other.token)]);
+
+    expect(arrived).toBe(2);
+    expect(results.map((r) => r.status).sort()).toEqual([200, 409]);
+    const lost = results.find((r) => r.status === 409)!;
+    expect(["SLOT_TAKEN", "CONFLICT"]).toContain(lost.body.code);
+    // The loser's appointment kept its time; the expired hold ended CANCELLED either way.
+    const loserId = results[0]!.status === 409 ? mine : theirs;
+    const kept = await row(loserId);
+    expect(kept.manageVersion).toBe(0);
+    expect((await row(h.body.holdId as string)).status).toBe("CANCELLED");
   });
 
   it("two pets, visit 0 cancelled, reschedule later → startsAt (view, detail, list) is the new slot start, not the cancelled visit's old time", async () => {

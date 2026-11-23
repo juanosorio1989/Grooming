@@ -152,9 +152,10 @@ export class AppointmentsService {
     const { settings } = await this.locations.getDefault();
     return this.prisma.$transaction(async (tx) => {
       const now = new Date();
-      await this.release.releaseExpired(tx, now, orgId);
-      // The row lock makes a concurrent cancel, reschedule or staff write wait, then see the new state.
+      // Row lock first (branch lock order), then expired holds. The lock makes a concurrent cancel,
+      // reschedule or staff write wait, then see the new state.
       await this.lockAppointment(tx, orgId, id);
+      await this.release.releaseExpired(tx, now, orgId);
       const row = await tx.appointment.findFirst({ where: { ...mineWhere(orgId, p.sub), id }, include: APPOINTMENT_VIEW_INCLUDE });
       if (!row) throw notFound();
       assertOwnerMayChange(row, settings.cancelWindowHours, now);
@@ -232,7 +233,7 @@ export class AppointmentsService {
    * rebuilt with `fromAppointment` (404/409), the slot must list those pets in
    * that order (400 `slot.pets`), the context loaded without the appointment's
    * own segments, booking mode, `validatePlan` (`verdictError`). Then one
-   * transaction: release expired holds → lock the row `FOR UPDATE` → re-check
+   * transaction: lock the row `FOR UPDATE` → release expired holds → re-check
    * BOOKED (409 CONFLICT) → `PlanWriter.replace` → booking mode, manageVersion
    * + 1 → outbox `appointment.changed` → audit `opts.action` with before/after
    * times and `override`. A lost race is 23P01 → 409 SLOT_TAKEN and nothing changes.
@@ -268,8 +269,8 @@ export class AppointmentsService {
     if (!verdict.ok) throw verdictError(verdict.reason);
 
     return this.prisma.$transaction(async (tx) => {
-      await this.release.releaseExpired(tx, new Date(), orgId);
       await this.lockAppointment(tx, orgId, id);
+      await this.release.releaseExpired(tx, new Date(), orgId);
       const current = await tx.appointment.findFirst({ where: { id, organizationId: orgId }, select: { status: true } });
       if (!current) throw notFound();
       if (current.status !== "BOOKED") throw notBooked();
@@ -314,11 +315,13 @@ export class AppointmentsService {
 
     return this.prisma.$transaction(async (tx) => {
       const now = new Date();
-      await this.release.releaseExpired(tx, now, orgId);
+      // Row locks first (customer → pets → appointment), expired holds after them: `releaseExpired`
+      // locks other holds, so taking it first would invert the branch lock order and could deadlock.
       // FOR UPDATE, not FOR SHARE: `createInTx` locks the customer FOR UPDATE, and upgrading a
       // share lock two transactions hold would deadlock. Customer before appointment, always.
       await assertActiveCustomer(tx, orgId, p.sub, "update");
-      // 2. The row lock makes a concurrent confirm wait, then see BOOKED (404).
+      // 2. The row lock makes a concurrent confirm wait, then see BOOKED (404). A hold that expired
+      // since step 1 is still HELD here (nothing released it yet), so it is 409 HOLD_EXPIRED, not 404.
       const held = await this.holds.loadUsable(tx, body.holdId, p, { lock: true });
       if (held.holdExpiresAt.getTime() <= now.getTime()) throw holdExpired();
 
@@ -358,6 +361,7 @@ export class AppointmentsService {
       if (savedIds.some((id) => !live.has(id))) throw petUnavailable();
       if (errors.length > 0) throw new BadRequestException({ code: "VALIDATION_FAILED", message: "Validation failed", errors });
       if (chosen.some((id) => !live.has(id))) throw petUnavailable();
+      await this.release.releaseExpired(tx, now, orgId);
 
       const actor: PetActor = { type: "CUSTOMER", claims: p };
       for (const { visit, pet } of pending) {

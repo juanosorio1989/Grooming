@@ -31,7 +31,8 @@ const PER_IP = [120, 600] as const;
  * no lead time, horizon or online-bookable checks, and no rate limit. Saved
  * pets need `customerId` (400 on `customerId`) and must belong to that active
  * customer; an unknown or deleted customer is 404. `excludeAppointmentId`
- * may be any BOOKED appointment of the organization; `customerId` with it is
+ * may be any BOOKED appointment of the organization whose customer is not
+ * deleted (else 404); `customerId` with it is
  * 400 (the appointment already names the customer).
  *
  * Engine input errors become 400, never 500.
@@ -129,11 +130,14 @@ export class AvailabilityService {
     }
   }
 
-  /** Staff: the pets of any BOOKED appointment of this organization (else 404), rebuilt with `fromAppointment`. */
+  /**
+   * Staff: the pets of any BOOKED appointment of this organization whose customer
+   * is not deleted (else 404, as `PATCH /staff/appointments/:id`), rebuilt with `fromAppointment`.
+   */
   private async staffRescheduledPets(appointmentId: string): Promise<ResolvedPets> {
     const orgId = await this.tenancy.getOrgId();
     const appt = await this.prisma.appointment.findFirst({
-      where: { id: appointmentId, organizationId: orgId, status: "BOOKED" },
+      where: { id: appointmentId, organizationId: orgId, status: "BOOKED", customer: { deletedAt: null } },
       select: { id: true },
     });
     if (!appt) throw new NotFoundException({ code: "NOT_FOUND" });

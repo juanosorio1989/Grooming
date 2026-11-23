@@ -20,7 +20,8 @@ export const MeExportSchema = z.object({
   consents: z.array(
     z.object({ channel: NotificationChannelSchema, granted: z.boolean(), source: z.string(), changedAt: IsoInstantSchema }),
   ),
-  pets: z.array(PetViewSchema.extend({ vaccines: z.array(VaccineViewSchema) })),
+  /** Every pet of the customer; `deletedAt` is null for a live pet, the removal instant for a removed one. */
+  pets: z.array(PetViewSchema.extend({ vaccines: z.array(VaccineViewSchema), deletedAt: IsoInstantSchema.nullable() })),
   appointments: z.array(AppointmentViewSchema),
   media: z.array(z.object({ id: IdSchema, kind: z.string(), petId: IdSchema, createdAt: IsoInstantSchema })),
 });

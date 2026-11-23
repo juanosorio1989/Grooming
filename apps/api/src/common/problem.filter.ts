@@ -2,7 +2,7 @@ import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus, Logge
 import type { Response } from "express";
 import { ZodValidationException } from "nestjs-zod";
 import { ErrorCode, ProblemSchema, type Problem } from "@grooming/contracts";
-import { pgConstraintName, pgSqlState } from "./pg-error.js";
+import { isTxConflict, pgConstraintName, pgSqlState } from "./pg-error.js";
 
 const STATUS_CODES: Record<number, ErrorCode> = {
   400: "VALIDATION_FAILED",
@@ -81,6 +81,11 @@ export class ProblemFilter implements ExceptionFilter {
       // The constraint name tells a real race (overlap) from a planner bug; the message carries no PII.
       this.logger.warn(`SLOT_TAKEN: exclusion constraint ${pgConstraintName(exception) ?? "unknown"}`);
       return { type: "about:blank", title: "Conflict", status: 409, code: "SLOT_TAKEN", detail: "That time was just taken" };
+    }
+    // A deadlock or serialization abort is a lost race between two writes: the client may retry.
+    if (isTxConflict(exception)) {
+      this.logger.warn("CONFLICT: transaction aborted by a lock or serialization conflict");
+      return { type: "about:blank", title: "Conflict", status: 409, code: "CONFLICT", detail: "A concurrent change got there first; reload and retry" };
     }
     return { type: "about:blank", title: "Internal Server Error", status: 500, code: "INTERNAL" };
   }

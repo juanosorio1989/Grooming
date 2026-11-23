@@ -180,8 +180,9 @@ export class StaffAppointmentsService {
     const orgId = await this.tenancy.getOrgId();
     return this.prisma.$transaction(async (tx) => {
       const now = new Date();
-      await this.release.releaseExpired(tx, now, orgId);
+      // Row lock first (branch lock order), then expired holds.
       await tx.$queryRaw`SELECT id FROM appointment WHERE id = ${id}::uuid AND organization_id = ${orgId}::uuid FOR UPDATE`;
+      await this.release.releaseExpired(tx, now, orgId);
       const row = await tx.appointment.findFirst({ where: staffWhere(orgId, id), include: APPOINTMENT_VIEW_INCLUDE });
       if (!row) throw notFound();
       if (row.status !== "BOOKED") throw conflict("The appointment is not booked");
@@ -245,8 +246,8 @@ export class StaffAppointmentsService {
   }
 
   /**
-   * One transaction: release expired holds → lock the customer (`FOR UPDATE`;
-   * deleted 404) → lock the saved pets (`FOR SHARE`; gone 409 PET_UNAVAILABLE)
+   * One transaction: lock the customer (`FOR UPDATE`; deleted 404) → lock the
+   * saved pets (`FOR SHARE`; gone 409 PET_UNAVAILABLE) → release expired holds
    * → create the new pets → BOOKED appointment (`hold_expires_at` stays null) →
    * plan rows → audit `appointment.create` → outbox `appointment.booked`.
    * A lost race on a segment is 23P01 → 409 SLOT_TAKEN.
@@ -254,8 +255,8 @@ export class StaffAppointmentsService {
   private async write(p: AccessClaims, ip: string | null, w: StaffWrite): Promise<StaffAppointmentView> {
     const orgId = await this.tenancy.getOrgId();
     return this.prisma.$transaction(async (tx) => {
-      await this.release.releaseExpired(tx, new Date(), orgId);
       try {
+        // Customer first (branch lock order: customer → pets → appointment), expired holds after the locks.
         // FOR UPDATE, not FOR SHARE: `createInTx` locks the customer FOR UPDATE too (an upgrade would deadlock).
         await assertActiveCustomer(tx, orgId, w.customerId, "update");
       } catch (err) {
@@ -265,6 +266,7 @@ export class StaffAppointmentsService {
       const savedIds = w.entries.flatMap((e) => ("petId" in e ? [e.petId] : []));
       const live = await this.appointments.lockLivePets(tx, orgId, w.customerId, savedIds);
       if (savedIds.some((id) => !live.has(id))) throw petUnavailable();
+      await this.release.releaseExpired(tx, new Date(), orgId);
 
       const actor: PetActor = { type: "STAFF", claims: p };
       const petIds: string[] = [];

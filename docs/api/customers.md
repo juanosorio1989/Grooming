@@ -34,7 +34,9 @@ Contract: `MeExportSchema` in `packages/contracts/src/account.ts`. Deleted custo
 rate limit `me:export:<customerId>` 5 per hour (`429 RATE_LIMITED`).
 
 `{ exportedAt, customer: CustomerView, identities: [{ provider, email, linkedAt }], consents: [{ channel,
-granted, source, changedAt }], pets: PetView[] (live pets, with vaccines and decrypted medical notes),
+granted, source, changedAt }], pets: (PetView & { deletedAt })[] (every pet of the customer, removed ones too,
+with vaccines and decrypted medical notes; `deletedAt` is null for a live pet and the ISO instant of removal
+otherwise, because visits and media can still point to a removed pet),
 appointments: AppointmentView[] (bookings only, never holds), media: [{ id, kind, petId, createdAt }] }`.
 Media covers every pet of the customer (also removed ones) and has no download links yet (Plan 05).
 Never includes staff-only private notes or the Google `sub`.
@@ -63,6 +65,8 @@ Irreversible, one transaction (`apps/api/src/customers/account.service.ts`). Loc
    `payload.appointmentId` is one of their appointments, deleted. Processed rows stay.
 4. Customer: `name`, `email`, `emergencyPhone`, private notes cleared, `phone = "deleted:<id>"`
    (keeps the per-organization phone index unique), `deletedAt` set. Consents stay as evidence.
+   A `cancel_reason` staff typed on one of the customer's appointments stays: it is the shop's own
+   record (it is never in the audit and the customer never sees it).
 5. Customer refresh tokens revoked.
 6. The keys `name`, `phone`, `email`, `emergencyPhone` are stripped from `before`/`after` of every
    audit row with `entity = customer` for this customer; then audit `customer.delete`
