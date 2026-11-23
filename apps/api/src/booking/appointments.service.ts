@@ -407,9 +407,9 @@ export class AppointmentsService {
   /**
    * `FOR SHARE`, in id order, on the given pets that are the customer's, in
    * this organization and not deleted, so a concurrent delete or merge waits
-   * for the booking. Returns the ids that qualified.
+   * for the booking. Returns the ids that qualified. Shared with staff bookings.
    */
-  private async lockLivePets(tx: Prisma.TransactionClient, orgId: string, customerId: string, ids: string[]): Promise<Set<string>> {
+  async lockLivePets(tx: Prisma.TransactionClient, orgId: string, customerId: string, ids: string[]): Promise<Set<string>> {
     const unique = [...new Set(ids)];
     if (unique.length === 0) return new Set();
     const rows = await tx.$queryRaw<{ id: string }[]>`

@@ -2,7 +2,6 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { AvailabilityError, validatePlan, type PlanVerdict } from "@grooming/availability";
 import type { AccessClaims, HoldRequest, HoldResponse, HoldView } from "@grooming/contracts";
 import { addDays, localDayBoundsUtc, utcToWall } from "@grooming/datetime";
-import { sizeClassFromWeight } from "@grooming/pricing";
 import type { BookingMode, Prisma } from "@prisma/client";
 import { AvailabilityContextLoader } from "../availability/context-loader.js";
 import { resolveBookingMode } from "../availability/context-mapper.js";
@@ -13,7 +12,7 @@ import { RateLimitService } from "../rate-limit/rate-limit.service.js";
 import { TenancyService } from "../tenancy/tenancy.service.js";
 import { HoldReleaseService } from "./hold-release.service.js";
 import { findPetMatches, parsePendingPet } from "./pet-matches.js";
-import { PetRequestResolver } from "./pet-requests.js";
+import { assertNewPetSizes, PetRequestResolver } from "./pet-requests.js";
 import { PlanWriter, type PendingPet } from "./plan-writer.js";
 import { engineError, slotFromView, verdictError } from "./slot-codec.js";
 
@@ -75,13 +74,7 @@ export class HoldsService {
 
     // Validate outside the transaction. The resolver runs first so a deleted customer is 401 before any 400.
     const { pets, labels } = await this.resolver.resolve(body.pets, principal?.sub ?? null);
-    // A new pet's stated size must agree with its weight (same thresholds as saved pets).
-    const sizeErrors = body.pets.flatMap((p, i) =>
-      "ref" in p && p.weightG != null && sizeClassFromWeight(p.weightG, settings.sizeThresholdsLb) !== p.sizeClass
-        ? [{ path: `pets.${i}.sizeClass`, message: "Does not match the weight" }]
-        : [],
-    );
-    if (sizeErrors.length > 0) throw new BadRequestException({ code: "VALIDATION_FAILED", message: "Validation failed", errors: sizeErrors });
+    assertNewPetSizes(body.pets, settings.sizeThresholdsLb);
     const slot = slotFromView(body.slot, labels);
     if (Math.abs(slot.start - Date.now()) > MAX_SLOT_DISTANCE_MS) throw fieldError("slot.startsAt", "Out of range");
     const day = utcToWall(slot.start, timezone).date;

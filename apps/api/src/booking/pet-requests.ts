@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import type { PetRequest } from "@grooming/availability";
 import type { AvailabilityQuery, HoldPet } from "@grooming/contracts";
+import { sizeClassFromWeight, type SizeThresholdsLb } from "@grooming/pricing";
 import { assertActiveCustomer } from "../customers/active-customer.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { TenancyService } from "../tenancy/tenancy.service.js";
@@ -16,6 +17,20 @@ export interface ResolvedPets {
 }
 
 type PetEntry = NonNullable<AvailabilityQuery["pets"]>[number] | HoldPet;
+
+/**
+ * A new pet's stated size must agree with its weight (same thresholds as saved
+ * pets): 400 VALIDATION_FAILED on `pets.<i>.sizeClass`. Shared by holds and
+ * staff bookings.
+ */
+export function assertNewPetSizes(entries: HoldPet[], thresholds: SizeThresholdsLb): void {
+  const errors = entries.flatMap((p, i) =>
+    "ref" in p && p.weightG != null && sizeClassFromWeight(p.weightG, thresholds) !== p.sizeClass
+      ? [{ path: `pets.${i}.sizeClass`, message: "Does not match the weight" }]
+      : [],
+  );
+  if (errors.length > 0) throw new BadRequestException({ code: "VALIDATION_FAILED", message: "Validation failed", errors });
+}
 
 /**
  * Turns pet entries (saved `petId` or inline `ref`) into engine pet requests,

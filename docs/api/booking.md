@@ -1,7 +1,7 @@
 # Booking
 
 The write path for holds, confirmations, reschedules and staff bookings (Plan 04b). Holds, confirm and owner
-appointments are served now; staff writes come in a later task. Routes live in `BookingApiModule`; the shared core in `BookingModule`
+appointments, staff bookings and walk-ins are served. Routes live in `BookingApiModule`; the shared core in `BookingModule`
 (`apps/api/src/booking/`) is used by every booking write and `/availability`, so the plan a client gets is the plan
 the server re-checks.
 
@@ -175,6 +175,56 @@ segments stay as they were.
 | 409 `OUTSIDE_CANCEL_WINDOW` | Less than `cancelWindowHours` before `startsAt` |
 | 409 `SLOT_TAKEN` | Reschedule onto a time that is no longer free |
 
+## Staff appointments
+
+`@StaffAuth`: OWNER and RECEPTION for every write; `GET` also lets an EMPLOYEE in, but only for an appointment with a
+segment assigned to them (else 404). Holds (live or released) are never visible: like the owner routes, a row with
+`hold_expires_at` set or status `HELD` is 404. Staff and walk-in bookings never set `hold_expires_at`.
+
+| Route | Body (strict) | Result |
+| --- | --- | --- |
+| `POST /staff/appointments` | `{ customerId, pets, slot, override?, notes? }` (`pets` as in holds; `slot` from staff `/availability` with the same `override`) | 201 `StaffAppointmentView` |
+| `GET /staff/appointments/:id` | | 200 `StaffAppointmentView` |
+| `PATCH /staff/appointments/:id` | `{ slot, override? }` (`slot` from staff `/availability?excludeAppointmentId=<id>`) | 200 `StaffAppointmentView` |
+| `POST /staff/appointments/:id/status` | `{ action: "CANCEL" \| "NO_SHOW", reason? }` | 200 `StaffAppointmentView` |
+| `POST /staff/walk-in` | `{ customerId, pets, override? }` | 201 `StaffAppointmentView` |
+
+`StaffAppointmentView` is the owner view plus `customerId`, `createdByStaffId` and `cancelReason`.
+
+**Book:** validated outside the transaction: the customer must exist in the organization and not be deleted (404)
+→ `resolve(pets, customerId)` → the new-pet weight/size check (`assertNewPetSizes`, 400 `pets.<i>.sizeClass`) → slot
+(400 out of range or bad booking mode) → `validatePlan` in `STAFF` mode with `override` (`verdictError`). Staff mode
+skips the lead time, horizon and online-bookable checks; `override` also ignores working hours, location hours and
+drop-off windows. Then one transaction: release expired holds → customer `FOR UPDATE` (deleted meanwhile 404) → saved
+pets `FOR SHARE` (deleted or merged meanwhile 409 `PET_UNAVAILABLE`) → new pets created with `createInTx` (staff
+actor, `pet.create` audit) → appointment `BOOKED`, source `RECEPTION`, `created_by_staff_id` = caller →
+`PlanWriter.insert` with the saved pet ids → audit `appointment.create` (`after { source, status, override,
+customerId, petIds, startsAt, readyAt }`; never notes, names or phones) → outbox `appointment.booked`. A `23P01` rolls
+everything back, new pets included, and is 409 `SLOT_TAKEN`.
+
+**Walk-in:** the same checks and write, source `WALK_IN`, on the first `findSlots` slot of today (local date) in
+`STAFF` mode with `override`. The engine's earliest staff start is now rounded down to the slot grid; the slot is
+taken only when `start <= now + slotIntervalMin`. No slot, or a later one, is 409 `SLOT_TAKEN` with
+`detail: "NO_SLOT_NOW"`.
+
+**Move:** an appointment whose customer is soft-deleted is 404; otherwise `replaceSlot(id, slot, { mode: "STAFF",
+override, action: "appointment.move", actorType: "STAFF" })` (see above). No cancel window for staff.
+
+**Status:** one transaction: release expired holds → lock the appointment `FOR UPDATE` → load it (404) → must be
+`BOOKED` (else 409 `CONFLICT`). `CANCEL` → `cancelInTx` with `reason` in `cancel_reason`, `cancelled_by` `STAFF`.
+`NO_SHOW` needs `now >= startsAt` (`appointmentStartsAt`; earlier is 409 `CONFLICT`): status `NO_SHOW`,
+`manage_version + 1`, every segment `occupies = false`, every visit not already `CANCELLED` becomes `NO_SHOW`, audit
+`appointment.no_show` (`before { status }`, `after { status, startsAt }`), no outbox.
+
+| Error | When |
+| --- | --- |
+| 400 `VALIDATION_FAILED` | Body shape; slot pets not matching `pets`; new pet size vs weight; booking mode; slot out of range; a plan rejection other than the `SLOT_TAKEN` ones |
+| 403 | Customer token; EMPLOYEE on a write |
+| 404 `NOT_FOUND` | Unknown or deleted customer; unknown appointment, a hold, another organization's; EMPLOYEE without a segment in it (GET); move of a deleted customer's appointment |
+| 409 `CONFLICT` | Status change or move of an appointment that is not `BOOKED`; `NO_SHOW` before the start |
+| 409 `PET_UNAVAILABLE` | A saved pet was deleted or merged between the check and the write |
+| 409 `SLOT_TAKEN` | The time is no longer free (`validatePlan` or `23P01`); walk-in with nothing starting now (`detail: "NO_SLOT_NOW"`) |
+
 ## Write order
 
 Validate outside the transaction (load the context, `validatePlan`; a rejection goes through `verdictError`) →
@@ -186,6 +236,7 @@ is a lost race: the problem filter answers `409 SLOT_TAKEN` and logs the constra
 | Piece | Job |
 | --- | --- |
 | `PetRequestResolver.resolve(entries, owner)` | Pet entries (saved `petId` or inline `ref`) → engine `PetRequest`s plus a label per engine pet id. `owner` null = anonymous (a `petId` is 401). A set `owner` must be an active customer (401). Same 400/404 rules as `/availability` |
+| `assertNewPetSizes(entries, thresholds)` (`pet-requests.ts`) | A new pet's stated `sizeClass` must match its `weightG` (location `sizeThresholdsLb`): 400 `pets.<i>.sizeClass`. Holds and staff bookings |
 | `PetRequestResolver.fromAppointment(id)` | Rebuilds the request of an appointment from its visits (position order, `CANCELLED` visits skipped, size and coat snapshots, services, preferred groomer or `"ANY"`). 404 if not in the organization; 409 `CONFLICT` if a visit has no saved pet yet |
 | `slotFromView` / `toSlotView` (`slot-codec.ts`) | Slot view ↔ engine slot. The engine pet id is the `petId` or `ref`; a view pet missing from the labels is 400 |
 | `verdictError(reason)` | `EMPLOYEE_UNAVAILABLE`, `RESOURCE_UNAVAILABLE`, `TOO_SOON` → 409 `SLOT_TAKEN`; any other rejection → 400 `VALIDATION_FAILED`, `detail` = reason |
