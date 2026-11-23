@@ -53,6 +53,8 @@ export interface CancelBy {
   actorId: string;
   reason: string | null;
   ip: string | null;
+  /** False: no `appointment.cancelled` outbox row (account deletion: nobody is left to notify). Default true. */
+  notify?: boolean;
 }
 
 /** Options of `replaceSlot` (owner reschedule or staff move). */
@@ -187,7 +189,7 @@ export class AppointmentsService {
    * Cancels a BOOKED appointment the caller loaded org-scoped and locked
    * (`FOR UPDATE`) in `tx`: status CANCELLED, cancelledAt, cancelReason,
    * cancelledBy, every segment `occupies = false`, every visit CANCELLED,
-   * manageVersion + 1, outbox `appointment.cancelled`, audit `appointment.cancel`.
+   * manageVersion + 1, outbox `appointment.cancelled` (unless `by.notify === false`), audit `appointment.cancel`.
    * 409 CONFLICT when it is not BOOKED (the update is conditional on it).
    * Shared with staff cancel and account deletion.
    */
@@ -200,9 +202,11 @@ export class AppointmentsService {
     if (count === 0) throw notBooked();
     await tx.appointmentSegment.updateMany({ where: { appointmentId: appt.id, organizationId: appt.organizationId }, data: { occupies: false } });
     await tx.petVisit.updateMany({ where: { appointmentId: appt.id, organizationId: appt.organizationId }, data: { status: "CANCELLED" } });
-    await tx.outboxEvent.create({
-      data: { organizationId: appt.organizationId, type: APPOINTMENT_CANCELLED_EVENT, payload: { appointmentId: appt.id } },
-    });
+    if (by.notify !== false) {
+      await tx.outboxEvent.create({
+        data: { organizationId: appt.organizationId, type: APPOINTMENT_CANCELLED_EVENT, payload: { appointmentId: appt.id } },
+      });
+    }
     await this.audit.record(
       {
         orgId: appt.organizationId,

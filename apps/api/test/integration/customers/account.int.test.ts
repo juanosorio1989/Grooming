@@ -8,10 +8,11 @@ import { createIntegrationApp, resetState } from "../app.js";
 import { FROM, local, seedBookableTuesday } from "../bookable-day.js";
 import { createTestGoogle, TEST_GOOGLE_CLIENT_ID, type TestGoogle } from "../google.js";
 import { seedFixture, type Fixture } from "../helpers.js";
-import { customerToken } from "../tokens.js";
+import { customerToken, staffToken } from "../tokens.js";
 
 const DAY = 86_400_000;
 const PII_KEYS = ["name", "phone", "email", "emergencyPhone"];
+const PET_PII_KEYS = ["name", "breed", "breedCode", "birthDate", "behaviorNotes", "vetName", "vetPhone", "allergies", "temperament", "medicalNotes"];
 
 type SlotView = { startsAt: string; readyAt: string; bookingMode: string; pets: { petId?: string; ref?: string }[] };
 type Ctx = Awaited<ReturnType<typeof createIntegrationApp>>;
@@ -329,9 +330,8 @@ describe("/v1/me/export and DELETE /v1/me", () => {
     expect(await snapshot(inShop)).toEqual(inShopBefore);
     expect(await snapshot(started)).toEqual(startedBefore);
 
-    // Only the booking produces an appointment.cancelled row; the hold does not.
-    const events = await ctx.prisma.outboxEvent.findMany({ where: { type: "appointment.cancelled" } });
-    expect(events.map((e) => (e.payload as { appointmentId: string }).appointmentId)).toEqual([future]);
+    // Account deletion notifies nobody: neither the booking nor the hold writes appointment.cancelled.
+    expect(await ctx.prisma.outboxEvent.count({ where: { type: "appointment.cancelled" } })).toBe(0);
     const cancels = await ctx.prisma.auditLog.findMany({ where: { action: "appointment.cancel" } });
     expect(cancels.map((a) => a.entityId)).toEqual([future]);
     expect(cancels[0]!.after).toEqual({ status: "CANCELLED", cancelledBy: "CUSTOMER" });
@@ -388,6 +388,124 @@ describe("/v1/me/export and DELETE /v1/me", () => {
     expect(theirs.after).toMatchObject({ name: "Bo B", email: "bo@test.dev" });
   });
 
+  it("appointment notes cleared; pending_pet keeps only ref and species; unprocessed appointment.* outbox rows of the customer deleted, processed ones kept", async () => {
+    const token = await ownerToken();
+    const booked = await book(token, local("08:00"));
+    await ctx.prisma.appointment.update({ where: { id: booked }, data: { notes: "Gate code 1234" } });
+    const newPet = { ref: "new-1", species: "DOG", sizeClass: "M", coatType: "CURLY", serviceIds: [f.serviceId], name: "Rex", breed: "Poodle", breedCode: "poodle", weightG: 19_000 };
+    const { ref, species, sizeClass, coatType, serviceIds } = newPet;
+    const slot = (await slots(token, [{ ref, species, sizeClass, coatType, serviceIds }])).find((s) => s.startsAt === local("10:00"));
+    const h = await hold({ pets: [newPet], slot }, token);
+    expect(h.status).toBe(201);
+    const holdId = h.body.holdId as string;
+    const other = await otherCustomer();
+    const theirs = (
+      await ctx.prisma.appointment.create({
+        data: { organizationId: f.orgId, locationId: f.locationId, customerId: other.id, status: "COMPLETED", source: "ONLINE", bookingMode: "DROP_OFF", dropOffAt: new Date(Date.now() - DAY), notes: "Their note" },
+      })
+    ).id;
+    await ctx.prisma.outboxEvent.deleteMany();
+    const event = (type: string, appointmentId: string, processedAt: Date | null) =>
+      ctx.prisma.outboxEvent.create({ data: { organizationId: f.orgId, type, payload: { appointmentId }, processedAt } });
+    const pendingBooked = await event("appointment.booked", booked, null);
+    const pendingChanged = await event("appointment.changed", booked, null);
+    const processedBooked = await event("appointment.booked", booked, new Date());
+    const theirPending = await event("appointment.booked", theirs, null);
+
+    expect((await deleteMe(token)).status).toBe(204);
+
+    expect((await ctx.prisma.appointment.findUniqueOrThrow({ where: { id: booked } })).notes).toBeNull();
+    expect((await ctx.prisma.appointment.findUniqueOrThrow({ where: { id: theirs } })).notes).toBe("Their note");
+    const visit = await ctx.prisma.petVisit.findFirstOrThrow({ where: { appointmentId: holdId } });
+    expect(visit.petId).toBeNull();
+    expect(visit.pendingPet).toEqual({ ref: "new-1", species: "DOG" });
+
+    expect(await ctx.prisma.outboxEvent.findUnique({ where: { id: pendingBooked.id } })).toBeNull();
+    expect(await ctx.prisma.outboxEvent.findUnique({ where: { id: pendingChanged.id } })).toBeNull();
+    expect(await ctx.prisma.outboxEvent.findUnique({ where: { id: processedBooked.id } })).not.toBeNull();
+    expect(await ctx.prisma.outboxEvent.findUnique({ where: { id: theirPending.id } })).not.toBeNull();
+    const mine = await ctx.prisma.appointment.findMany({ where: { customerId: f.customerId }, select: { id: true } });
+    const left = await ctx.prisma.outboxEvent.findMany({ where: { processedAt: null, type: { startsWith: "appointment." } } });
+    expect(left.filter((e) => mine.some((a) => a.id === (e.payload as { appointmentId?: string }).appointmentId))).toEqual([]);
+  });
+
+  it("pet and pet_vaccine audit rows (pet.create, pet.update, pet.merge, pet_vaccine.*) of the customer's pets lose the pet PII keys", async () => {
+    const token = await ownerToken();
+    const created = await auth(request(server()).post("/v1/me/pets").send({ name: "Rex", species: "DOG", breed: "Poodle", vetName: "Dr. Who", vetPhone: "+13055550123" }), token);
+    expect(created.status).toBe(201);
+    const rex = created.body.id as string;
+    const patched = await auth(
+      request(server()).patch(`/v1/me/pets/${f.petId}`).send({ behaviorNotes: "Bites at the dryer", allergies: ["chicken"], temperament: ["NERVOUS"], vetName: "Dr. Vet", birthDate: "2020-03-01", breedCode: "poodle" }),
+      token,
+    );
+    expect(patched.status).toBe(200);
+    const vax = await auth(request(server()).post(`/v1/me/pets/${rex}/vaccines`).send({ type: "DHPP", expiresOn: "2027-01-01" }), token);
+    expect(vax.status).toBe(201);
+    const gone = await auth(request(server()).post(`/v1/me/pets/${f.petId}/vaccines`).send({ type: "RABIES", expiresOn: "2027-02-01" }), token);
+    expect(gone.status).toBe(201);
+    expect((await auth(request(server()).delete(`/v1/me/pets/${f.petId}/vaccines/${gone.body.id}`), token)).status).toBe(204);
+    const reception = await staffToken(ctx.app, { sub: f.staffA, org: f.orgId, role: "RECEPTION" });
+    const merged = await auth(request(server()).post(`/v1/staff/pets/${rex}/merge`).send({ intoPetId: f.petId }), reception);
+    expect(merged.status).toBe(200);
+    // Another customer's pet audit stays intact.
+    const other = await otherCustomer();
+    expect((await auth(request(server()).post("/v1/me/pets").send({ name: "Bo dog", species: "DOG", breed: "Lab" }), other.token)).status).toBe(201);
+
+    const actions = async () =>
+      (await ctx.prisma.auditLog.findMany({ where: { entity: { in: ["pet", "pet_vaccine"] }, actorId: { not: other.id } }, select: { action: true } })).map((r) => r.action).sort();
+    expect(await actions()).toEqual(["pet.create", "pet.merge", "pet.update", "pet_vaccine.create", "pet_vaccine.create", "pet_vaccine.delete"]);
+
+    expect((await deleteMe(token)).status).toBe(204);
+
+    const rows = await ctx.prisma.auditLog.findMany({ where: { entity: { in: ["pet", "pet_vaccine"] }, actorId: { not: other.id } } });
+    expect(rows).toHaveLength(6);
+    for (const r of rows) {
+      for (const side of [r.before, r.after]) {
+        if (side === null) continue;
+        for (const k of PET_PII_KEYS) expect(side).not.toHaveProperty(k);
+      }
+    }
+    expect(JSON.stringify(rows)).not.toMatch(/Rex|Max|Poodle|Dr\. Who|Dr\. Vet|Bites|chicken|NERVOUS|\+13055550123|2020-03-01/);
+    const update = rows.find((r) => r.action === "pet.update")!;
+    expect(update.after).toMatchObject({ id: f.petId, species: "DOG" });
+    const merge = rows.find((r) => r.action === "pet.merge")!;
+    expect(merge.after).toMatchObject({ sourcePetId: rex });
+    const vaccineRow = rows.find((r) => r.action === "pet_vaccine.delete")!;
+    expect(vaccineRow.before).toMatchObject({ petId: f.petId, type: "RABIES" });
+    const theirs = await ctx.prisma.auditLog.findFirstOrThrow({ where: { entity: "pet", actorId: other.id } });
+    expect(theirs.after).toMatchObject({ name: "Bo dog", breed: "Lab" });
+  });
+
+  it("POST /holds waiting on the customer lock while DELETE /me commits → 401 and no hold for the customer", async () => {
+    const token = await ownerToken();
+    const slot = (await slots(token))[0];
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    // Stand-in for a DELETE /me in flight: hold the customer lock, then soft-delete and commit.
+    const blocker = ctx.prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT id FROM customer WHERE id = ${f.customerId}::uuid FOR UPDATE`;
+        await gate;
+        await tx.customer.update({ where: { id: f.customerId }, data: { deletedAt: new Date() } });
+      },
+      { timeout: 20_000 },
+    );
+    const pending = hold({ pets: [savedPet()], slot }, token).then((r) => r);
+    // Wait until the hold transaction is blocked on the customer row lock (past every unlocked pre-check).
+    for (let i = 0; i < 200; i++) {
+      const waiting = await ctx.prisma.$queryRaw<{ n: bigint }[]>`
+        SELECT count(*) AS n FROM pg_stat_activity
+        WHERE wait_event_type = 'Lock' AND query ILIKE '%FROM customer%FOR UPDATE%'`;
+      if (Number(waiting[0]!.n) > 0) break;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    release();
+    await blocker;
+    const res = await pending;
+    expect(res.status).toBe(401);
+    expect(await ctx.prisma.appointment.count({ where: { customerId: f.customerId } })).toBe(0);
+  });
+
   it("DELETE /me racing POST /appointments (Promise.all) → afterwards no BOOKED appointment and no new pet belongs to the deleted customer", async () => {
     const token = await ownerToken();
     const newPet = { ref: "new-1", species: "DOG", sizeClass: "M", coatType: "CURLY", serviceIds: [f.serviceId], name: "Rex", breed: "Poodle" };
@@ -398,7 +516,9 @@ describe("/v1/me/export and DELETE /v1/me", () => {
 
     const [del, conf] = await Promise.all([deleteMe(token), confirm(h.body.holdId as string, token)]);
     expect(del.status).toBe(204);
-    expect([201, 401, 404]).toContain(conf.status);
+    // The hold is anonymous, so DELETE /me never touches it: confirm either commits first (201, then the
+    // booking is cancelled) or locks the customer after the delete and sees it deleted (401).
+    expect([201, 401]).toContain(conf.status);
 
     expect(await ctx.prisma.appointment.count({ where: { customerId: f.customerId, status: "BOOKED" } })).toBe(0);
     expect(await ctx.prisma.pet.count({ where: { customerId: f.customerId, deletedAt: null } })).toBe(0);

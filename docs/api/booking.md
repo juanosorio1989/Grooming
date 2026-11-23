@@ -32,7 +32,8 @@ Create steps: rate limit `holds:ip:<hash>` 20 per 600 s → pets resolved as in 
 customer is 401 here, before any 400) → a new pet with `weightG` must have the size class its weight gives
 (`settings.sizeThresholdsLb`) → the context for the slot's local
 day plus one (excluding `replaceHoldId`) → the booking mode must match the services → `validatePlan` (online mode).
-Then one transaction: release expired holds of the organization → release `replaceHoldId` (rules below) → insert the
+Then one transaction: with a customer token, lock the customer `FOR UPDATE` (401 if deleted meanwhile;
+customer first, the branch lock order) → release expired holds of the organization → release `replaceHoldId` (rules below) → insert the
 appointment (`HELD`, source `ONLINE`, `customer_id` = token or null, `hold_expires_at` = now + `holdMinutes`,
 `drop_off_at` = slot start in drop-off mode, `estimated_ready_at` = slot `readyAt`) → `PlanWriter.insert`. A new pet
 is stored in `pet_visit.pending_pet` (`ref`, `species`, `name`, `breed`, `breedCode`, `weightG`). No audit and no

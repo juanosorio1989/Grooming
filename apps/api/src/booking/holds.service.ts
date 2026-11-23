@@ -106,6 +106,9 @@ export class HoldsService {
     // A lost race on any segment is a 23P01 here, answered as 409 SLOT_TAKEN by the problem filter.
     return this.prisma.$transaction(async (tx) => {
       const now = new Date();
+      // Customer first (the branch lock order): a concurrent `DELETE /me` either commits first (401 here)
+      // or waits for this hold and then releases it. The check above ran outside this transaction.
+      if (principal) await assertActiveCustomer(tx, orgId, principal.sub, "update");
       await this.release.releaseExpired(tx, now, orgId);
       if (body.replaceHoldId !== undefined) {
         // Re-read in the transaction: it may have expired (just released) or been confirmed since.

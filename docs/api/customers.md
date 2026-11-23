@@ -46,14 +46,21 @@ Irreversible, one transaction (`apps/api/src/customers/account.service.ts`). Loc
 
 1. Not-yet-started appointments (`appointmentStartsAt` after now): `HELD` ones are released
    (`HOLD_RELEASED`, by `CUSTOMER`, no outbox row); `BOOKED` ones are cancelled like any cancel
-   (reason `ACCOUNT_DELETED`, `occupies = false`, visits `CANCELLED`, outbox `appointment.cancelled`).
-   `IN_SHOP`, started and finished appointments are untouched.
+   (reason `ACCOUNT_DELETED`, `occupies = false`, visits `CANCELLED`), with no `appointment.cancelled`
+   outbox row (nobody is left to notify). `IN_SHOP`, started and finished appointments are untouched.
+   On every appointment of the customer `notes` is cleared and `pending_pet` keeps only `ref` and
+   `species` (`name`, `breed`, `breedCode`, `weightG` removed; the column stays non-null for the CHECK).
 2. Pets: the `PET_PHOTO` and `VACCINE_CARD` media rows are deleted (after nulling `photoMediaId` and
    deleting the vaccines), with one outbox `media.purge { objectKeys }` when there were any; the
-   Plan 05 worker deletes the files. `BEFORE`, `AFTER` and `STEP` media stay. Every pet becomes
+   Plan 05 worker deletes the files. `BEFORE`, `AFTER` and `STEP` media stay. Before the vaccines go,
+   the keys `name`, `breed`, `breedCode`, `birthDate`, `behaviorNotes`, `vetName`, `vetPhone`,
+   `allergies`, `temperament`, `medicalNotes` are stripped from the audit rows with `entity = pet`
+   for these pets (`pet.create|update|delete|merge`) and `entity = pet_vaccine` for their vaccines
+   (also vaccines deleted earlier, found by the `petId` in the snapshot). Every pet becomes
    `name "Deleted pet"`, `breed "-"`, with breed code, birth date, medical and behavior notes, vet
    name and phone cleared and empty allergies and temperament; live pets get `deletedAt`.
-3. Identities deleted; unprocessed outbox rows whose `payload.customerId` is this customer deleted.
+3. Identities deleted; unprocessed outbox rows whose `payload.customerId` is this customer, or whose
+   `payload.appointmentId` is one of their appointments, deleted. Processed rows stay.
 4. Customer: `name`, `email`, `emergencyPhone`, private notes cleared, `phone = "deleted:<id>"`
    (keeps the per-organization phone index unique), `deletedAt` set. Consents stay as evidence.
 5. Customer refresh tokens revoked.
@@ -63,3 +70,5 @@ Irreversible, one transaction (`apps/api/src/customers/account.service.ts`). Loc
 
 Visits and visit media stay for the shop, linked to the anonymized pet. A Google link racing the
 delete either finishes first (and its identity is deleted) or sees the deleted customer (`409`/`404`).
+`POST /holds` and `POST /appointments` also lock the customer first, so a hold or booking racing the
+delete either lands first (and is released or cancelled) or gets `401`.

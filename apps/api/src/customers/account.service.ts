@@ -5,7 +5,7 @@ import { AuditService } from "../audit/audit.service.js";
 import { APPOINTMENT_VIEW_INCLUDE, appointmentStartsAt, toAppointmentView } from "../booking/appointment-view.js";
 import { AppointmentsService } from "../booking/appointments.service.js";
 import { HoldReleaseService } from "../booking/hold-release.service.js";
-import { PetsService, withVaccines } from "../pets/pets.service.js";
+import { PET_AUDIT_PII_KEYS, PetsService, withVaccines } from "../pets/pets.service.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { RateLimitService } from "../rate-limit/rate-limit.service.js";
 import { TenancyService } from "../tenancy/tenancy.service.js";
@@ -18,6 +18,9 @@ const EXPORT_PER_CUSTOMER = [5, 3600] as const;
 export const MEDIA_PURGE_EVENT = "media.purge";
 export const ACCOUNT_DELETED_REASON = "ACCOUNT_DELETED";
 export const DELETED_PET_NAME = "Deleted pet";
+
+/** `pending_pet` keys removed on deletion; `ref` and `species` stay (non-identifying, and the column must stay non-null). */
+const PENDING_PET_PII_KEYS = ["name", "breed", "breedCode", "weightG"] as const;
 
 /** Media kinds that belong to the owner's profile and go with the account. Visit media (BEFORE, AFTER, STEP) stay for the shop. */
 const PROFILE_MEDIA_KINDS = ["PET_PHOTO", "VACCINE_CARD"] as const;
@@ -104,10 +107,15 @@ export class AccountService {
    * 1. Not-yet-started appointments of the customer: HELD → released (`HOLD_RELEASED`, by
    *    CUSTOMER; no outbox row), BOOKED → `cancelInTx` with reason `ACCOUNT_DELETED`.
    *    IN_SHOP, started and finished appointments are untouched.
+   *    The cancellations write no `appointment.cancelled` outbox row (nobody is left to notify).
+   *    Every appointment of the customer: `notes` cleared; `pending_pet` keeps only `ref` and
+   *    `species` (the CHECK needs it non-null while `pet_id` is null).
    * 2. Pets: PET_PHOTO / VACCINE_CARD media → one `media.purge` outbox row with their keys,
-   *    photo links nulled, vaccines deleted, those media rows deleted. Every pet anonymized;
-   *    live pets get `deletedAt = now` (already removed pets keep their deletion time).
-   * 3. Identities deleted; unprocessed outbox rows whose payload names this customer deleted.
+   *    photo links nulled, pet PII keys stripped from their `pet` / `pet_vaccine` audit rows,
+   *    vaccines deleted, those media rows deleted. Every pet anonymized; live pets get
+   *    `deletedAt = now` (already removed pets keep their deletion time).
+   * 3. Identities deleted; unprocessed outbox rows whose payload names this customer or one of
+   *    their appointments deleted.
    * 4. Customer anonymized (`phoneE164 = "deleted:" + id` keeps the per-org unique index),
    *    `deletedAt = now`. Consents stay as evidence.
    * 5. Customer refresh tokens revoked.
@@ -131,13 +139,21 @@ export class AccountService {
       const petsDeleted = petRows.filter((r) => r.deleted_at === null).length;
 
       const appointmentsCancelled = await this.endFutureAppointments(tx, orgId, customerId, now, ip);
+      await tx.appointment.updateMany({ where: { organizationId: orgId, customerId, notes: { not: null } }, data: { notes: null } });
+      await tx.$executeRaw`
+        UPDATE pet_visit SET pending_pet = pending_pet - ${[...PENDING_PET_PII_KEYS]}::text[]
+        WHERE organization_id = ${orgId}::uuid AND jsonb_typeof(pending_pet) = 'object'
+          AND appointment_id IN (SELECT id FROM appointment WHERE organization_id = ${orgId}::uuid AND customer_id = ${customerId}::uuid)`;
 
       if (petIds.length > 0) await this.anonymizePets(tx, orgId, petIds, now);
 
       await tx.customerIdentity.deleteMany({ where: { organizationId: orgId, customerId } });
       await tx.$executeRaw`
         DELETE FROM outbox_event
-        WHERE organization_id = ${orgId}::uuid AND processed_at IS NULL AND payload->>'customerId' = ${customerId}`;
+        WHERE organization_id = ${orgId}::uuid AND processed_at IS NULL
+          AND (payload->>'customerId' = ${customerId}
+            OR payload->>'appointmentId' IN (
+              SELECT id::text FROM appointment WHERE organization_id = ${orgId}::uuid AND customer_id = ${customerId}::uuid))`;
 
       await tx.customer.update({
         where: { id: customerId },
@@ -211,6 +227,7 @@ export class AccountService {
           actorId: customerId,
           reason: ACCOUNT_DELETED_REASON,
           ip,
+          notify: false,
         });
         cancelled += 1;
       }
@@ -247,6 +264,20 @@ export class AccountService {
       },
     });
     await tx.pet.updateMany({ where: { id: { in: petIds }, organizationId: orgId, deletedAt: null }, data: { deletedAt: now } });
+    // Audit scrub before the vaccines go: their ids find the pet_vaccine rows. Rows of vaccines
+    // deleted earlier are found through the `petId` their snapshots carry. Covers pet.merge rows.
+    const vaccineIds = (await tx.petVaccine.findMany({ where: { organizationId: orgId, petId: { in: petIds } }, select: { id: true } })).map((v) => v.id);
+    const keys = [...PET_AUDIT_PII_KEYS];
+    await tx.$executeRaw`
+      UPDATE audit_log SET
+        before = CASE WHEN jsonb_typeof(before) = 'object' THEN before - ${keys}::text[] ELSE before END,
+        after = CASE WHEN jsonb_typeof(after) = 'object' THEN after - ${keys}::text[] ELSE after END
+      WHERE organization_id = ${orgId}::uuid AND (
+        (entity = 'pet' AND entity_id = ANY(${petIds}::text[]))
+        OR (entity = 'pet_vaccine' AND (
+          entity_id = ANY(${vaccineIds}::text[])
+          OR before->>'petId' = ANY(${petIds}::text[])
+          OR after->>'petId' = ANY(${petIds}::text[]))))`;
     await tx.petVaccine.deleteMany({ where: { organizationId: orgId, petId: { in: petIds } } });
     if (profileMedia.length > 0) {
       await tx.media.deleteMany({ where: { organizationId: orgId, id: { in: profileMedia.map((m) => m.id) } } });

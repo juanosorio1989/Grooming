@@ -24,6 +24,24 @@ const MAX_RESULTS = 100;
 const isoDate = (d: Date): string => d.toISOString().slice(0, 10);
 const toDate = (s: string): Date => new Date(`${s}T00:00:00Z`);
 
+/**
+ * Keys of the pet audit snapshot (`auditShape`) that are free text or identify the animal or its
+ * owner. `DELETE /me` strips exactly these from the pet and pet_vaccine audit rows of the customer's
+ * pets; keep the list in sync with `view`. (`medicalNotes` is never written; listed defensively.)
+ */
+export const PET_AUDIT_PII_KEYS = [
+  "name",
+  "breed",
+  "breedCode",
+  "birthDate",
+  "behaviorNotes",
+  "vetName",
+  "vetPhone",
+  "allergies",
+  "temperament",
+  "medicalNotes",
+] as const;
+
 export type PetRow = Pet & { vaccines: PetVaccine[] };
 export const withVaccines = { vaccines: { orderBy: [{ expiresOn: "asc" }, { id: "asc" }] } } satisfies Prisma.PetInclude;
 
